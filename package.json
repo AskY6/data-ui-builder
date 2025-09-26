@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "ahooks": "^3.9.5",
+    "antd": "^5.27.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

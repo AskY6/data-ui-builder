@@ -16,6 +16,7 @@ export type DateDimensionMeta = BaseDimensionMeta & { type: 'date' }
 export type DimensionMeta = NormalDimensionMeta | DateDimensionMeta
 
 export type NormalDimensionPickerValue = {
+    type: 'normal',
     meta: DimensionMeta
     options: DimensionEnum[]
 }
@@ -26,9 +27,19 @@ export type CascadeDimensionPickerNode = {
     meta: DimensionMeta
 }
 export type CascadeDimensionPickerValue = {
+    type: 'cascade',
     // 顺序是树的层级关系
     dimensions: DimensionMeta[]
     treeOptions: Tree<CascadeDimensionPickerNode>
+}
+
+export type DimensionPickerValue = NormalDimensionPickerValue | CascadeDimensionPickerValue
+
+export const isNormalDimensionPickerValue = (dimensionPickerValue: DimensionPickerValue): dimensionPickerValue is NormalDimensionPickerValue => {
+    return dimensionPickerValue.type === 'normal'
+}
+export const isCascadeDimensionPickerValue = (dimensionPickerValue: DimensionPickerValue): dimensionPickerValue is CascadeDimensionPickerValue => {
+    return dimensionPickerValue.type === 'cascade'
 }
 
 /**
