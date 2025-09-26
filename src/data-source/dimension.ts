@@ -6,18 +6,21 @@ export type DimensionEnum = { label: string; value: string }
 /**
  * 基础描述信息
  */
-export type DimensionMeta = {
+export type BaseDimensionMeta = {
     code: string
     name: string
     description: string
 }
+export type NormalDimensionMeta = BaseDimensionMeta & { type: 'normal' }
+export type DateDimensionMeta = BaseDimensionMeta & { type: 'date' }
+export type DimensionMeta = NormalDimensionMeta | DateDimensionMeta
 
 export type NormalDimensionPickerValue = {
     meta: DimensionMeta
     options: DimensionEnum[]
 }
 
-// 一般用来表达省市区之类的级联选择。 不用于处理特殊依赖关系，特殊依赖关系使用特定的 relation 表达，在页面 ui model 层特殊实现
+// 一般用来表达省市区之类的稳定级联选择。 不用于处理特殊依赖关系，特殊依赖关系使用特定的 relation 表达，在页面 ui model 层特殊实现
 export type CascadeDimensionPickerNode = {
     enum: DimensionEnum
     meta: DimensionMeta
