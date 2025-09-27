@@ -1,3 +1,4 @@
+//#region dimension
 import {
     type DimensionMeta,
     type DimensionPickerValue,
@@ -28,3 +29,13 @@ export const useNormalDimensionOptionPickerRequest = (
 ): DimensionOptionRequest<NormalDimensionPickerValue> => {
     throw new Error("unimplementd");
 };
+
+//#endregion
+
+
+//#region indicator loader
+
+export const useIndicatorLoader = () =>{
+
+}
+//#endregion

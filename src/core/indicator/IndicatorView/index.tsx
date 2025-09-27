@@ -1,0 +1,1 @@
+export { PercentIndicatorView, type PercentIndicatorViewProps } from './IndicatorView'
