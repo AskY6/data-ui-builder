@@ -3,12 +3,36 @@ export type Tree<T> = {
   value: T | null;
   children: Tree<T>[];
 };
+/**
+ * @param row 第 row 个节点对应的下钻路径 
+ * @param depth 下钻路径的第 depth 个元素
+ */
+export const findNodeByRowAndDepth = <T>(tree: Tree<T>[], row: number, depth: number): Tree<T> | null => {
+  const treeLeafCountList = tree.map(getLeafCountOfTree)
+
+  let accRowCount = 0
+  for (let i = 0; i < treeLeafCountList.length; i++) {
+    const nextAccRowCount = accRowCount += treeLeafCountList[i]
+    if (nextAccRowCount >= row) {
+      const nextTree = tree[i]
+      // 结束条件
+      if (depth === 0) {
+        return nextTree
+      } else {
+        return findNodeByRowAndDepth(nextTree.children, row - treeLeafCountList.slice(0, i).reduce((acc, next) => acc + next, 0), depth - 1)
+      }
+    }
+  }
+  return null
+}
 export const travelTree = <T>(
   tree: Tree<T>,
-  callback: (node: Tree<T>) => void
+  callback: (node: Tree<T>, nodePath: Tree<T>[]) => void,
+  nodePath: Tree<T>[] = []
 ) => {
-  callback(tree);
-  tree.children.forEach((child) => travelTree(child, callback));
+  const newNodePath: Tree<T>[] = [...nodePath, tree]
+  callback(tree, newNodePath);
+  tree.children.forEach((child) => travelTree(child, callback, newNodePath));
 };
 
 export const getLeafCountOfTree = <T>(tree: Tree<T>): number => {
@@ -60,6 +84,19 @@ export const mapTwoDimensionTable = <T, R>(
     row.map((cell, columnIndex) => callback(cell, rowIndex, columnIndex))
   );
 };
+export const getNodesInRowAndCol = <T>(table: TwoDimensionTable<T>, row: number, col: number) => {
+  const rowItems = table[row].slice(0, col)
+
+  let colItems: T[] = []
+  for (let i = 0; i < row; i++) {
+    for (let j = 0; j < col; j++) {
+      if (j === (col - 1)) {
+        colItems.push(table[i][j])
+      }
+    }
+  }
+  return [...rowItems, ...colItems]
+}
 //#endregion
 
 //#region base define
@@ -115,8 +152,12 @@ export type DimensionTableData = {
     indicators: IndicatorValue[];
   }[];
 };
-// 以 dimensionMetaList 为 key， 找到所有 key 的可能组合
 
+export const getIndicatorValue = (data: DimensionTableData, indicator: IndicatorMeta, filter: DimensionValue[]) => {
+  throw new Error('unimplementation') 
+}
+
+// 以 dimensionMetaList 为 key， 找到所有 key 的可能组合
 const getAllDimensionValuesFromData = (
   data: DimensionTableData,
   dimensionMeta: DimensionMeta,
@@ -142,17 +183,17 @@ const getAllDimensionValuesFromData = (
 //#region for ui, not for specific render. only config
 export type UIConfigDimension =
   | {
-      type: "dimension";
-      meta: DimensionMeta;
-      // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
-      alignToParent?: boolean;
-    }
+    type: "dimension";
+    meta: DimensionMeta;
+    // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
+    alignToParent?: boolean;
+  }
   | {
-      type: "indicator";
-      meta: IndicatorMeta[]; // 应该是一组指标的描述。被当作伪维度时，IndicatorMeta 相当于维度枚举值，一组 IndicatorMeta 构成一个伪维度
-      // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
-      alignToParent?: boolean;
-    };
+    type: "indicator";
+    meta: IndicatorMeta[]; // 应该是一组指标的描述。被当作伪维度时，IndicatorMeta 相当于维度枚举值，一组 IndicatorMeta 构成一个伪维度
+    // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
+    alignToParent?: boolean;
+  };
 export type UIHeaderNoIndicatorConfig = {
   dimensions: UIConfigDimension[];
 };
@@ -203,16 +244,24 @@ export type DimensionTableUIConfig =
 
 // region for ui, for render
 export type BaseCell = {
-  // 计算出来唯一 key, 用来计算合并单元格的目的
-  keyForMerge: string;
+
 };
+
 export type IndicatorCell = BaseCell & {
-  indicator: IndicatorValue;
+  type: 'indicator'
+  indicator: { type: 'value', value: IndicatorValue } | { type: 'toFill' };
 };
 export type DimensionCell = BaseCell & {
-  dimension: DimensionValue;
+  type: 'dimension'
+  dimension: DimensionNodeValue;
 };
 export type Cell = IndicatorCell | DimensionCell;
+export const isDimensionCell = (cell: Cell): cell is DimensionCell => {
+  return cell.type === 'dimension'
+}
+export const isIndicatorCell = (cell: Cell): cell is IndicatorCell => {
+  return cell.type === 'indicator'
+}
 export type DataForDisplay = {
   cells: TwoDimensionTable<Cell>;
 };
@@ -224,15 +273,24 @@ export type DataForDisplay = {
 //  1. 只是对前序维度的一个透明代理
 //  2. 如果指标本身配置了有效的维度，那么如果后续的维度无效，则不按后续的维度下钻，而是聚合成一个值
 export type DrillPath = UIConfigDimension[];
+export type FilterDimensionNodeValue = {
+  type: "dimension"; // -> filter
+  value: DimensionValue;
+}
+export type IndicatorDimensionNodeValue = {
+  type: "indicator"; // -> proxy
+  value: IndicatorMeta;
+};
 export type DimensionNodeValue =
-  | {
-      type: "dimension";
-      value: DimensionValue;
-    }
-  | {
-      type: "indicator";
-      value: IndicatorMeta;
-    };
+  | FilterDimensionNodeValue
+  | IndicatorDimensionNodeValue
+
+export const isFilterDimensionNodeValue = (node: DimensionNodeValue): node is FilterDimensionNodeValue => {
+  return node.type === 'dimension'
+}
+export const isIndicatorDimensionNodeValue = (node: DimensionNodeValue): node is IndicatorDimensionNodeValue => {
+  return node.type === 'indicator'
+}
 /**
  * 检查维度对于指标是否有意义
  * @param dimension
@@ -242,7 +300,8 @@ export const isDimensionValidateForIndicator = (
   dimension: DimensionMeta,
   indicator: IndicatorMeta
 ): boolean => {
-  throw new Error("not implemented");
+  // throw new Error("not implemented");
+  return true
 };
 export const createDimensionNodeValue = (
   value: DimensionValue
@@ -317,6 +376,7 @@ const buildTree = (
   return [];
 };
 
+// 仅填充了维度
 const treeToDisplayCells = (
   treeList: Tree<DimensionNodeValue>[]
 ): DataForDisplay => {
@@ -327,7 +387,24 @@ const treeToDisplayCells = (
     cells: mapTwoDimensionTable(
       emptyTable,
       (_, rowIndex, columnIndex): Cell => {
-        throw new Error("not implemented");
+        const node = findNodeByRowAndDepth(treeList, rowIndex, columnIndex)
+        // 未找到 node, 说明是指标
+        if (!node) {
+          const value: IndicatorCell = {
+            type: 'indicator',
+            indicator: { type: 'toFill' }
+          }
+          return value
+        }
+
+        if (!node.value) {
+          throw new Error(`dimension node exception: no value; ${node}`)
+        }
+        const value: DimensionCell = {
+          type: 'dimension',
+          dimension: node.value
+        }
+        return value
       }
     ),
   };
@@ -336,3 +413,25 @@ export const configAndDataToDisplay = (
   drillPath: DrillPath,
   data: DimensionTableData
 ) => treeToDisplayCells(buildTree(drillPath, data));
+
+export const fillData = (displayData: DataForDisplay, data: DimensionTableData) => {
+  return mapTwoDimensionTable(displayData.cells, (cell, rowIndex, colIndex) => {
+    if (cell.type !== 'indicator') return
+    if (cell.indicator.type !== 'toFill') return
+
+    const crossNodes = getNodesInRowAndCol(displayData.cells, rowIndex, colIndex)
+    const crossDimensionNodes = crossNodes.filter(isDimensionCell)
+    // 所有真实的维度，用户作为 filter
+    const crossDimensionForFilter = crossDimensionNodes.filter(node => isFilterDimensionNodeValue(node.dimension))
+    // 作为指标的维度值，可能是表头，也可能是下钻路径中的一个节点
+    const crossFakeDimension = crossDimensionNodes.find(node => isIndicatorDimensionNodeValue(node.dimension))
+    if (!crossFakeDimension) {
+      throw new Error('未找到要计算的指标值')
+    }
+    const indicatorMeta = (crossFakeDimension.dimension as IndicatorDimensionNodeValue).value
+    const filterDimensionsValue = crossDimensionForFilter.map(item => (item.dimension as FilterDimensionNodeValue).value)
+
+    // 根据 crossDimensionNodes 从 data 中获取指标值
+    const indicatorValue = getIndicatorValue(data, indicatorMeta, filterDimensionsValue)
+  })
+}
