@@ -154,7 +154,7 @@ export type DimensionTableData = {
 };
 
 export const getIndicatorValue = (data: DimensionTableData, indicator: IndicatorMeta, filter: DimensionValue[]) => {
-  throw new Error('unimplementation') 
+  throw new Error('unimplementation')
 }
 
 // 以 dimensionMetaList 为 key， 找到所有 key 的可能组合
@@ -414,24 +414,45 @@ export const configAndDataToDisplay = (
   data: DimensionTableData
 ) => treeToDisplayCells(buildTree(drillPath, data));
 
-export const fillData = (displayData: DataForDisplay, data: DimensionTableData) => {
-  return mapTwoDimensionTable(displayData.cells, (cell, rowIndex, colIndex) => {
-    if (cell.type !== 'indicator') return
-    if (cell.indicator.type !== 'toFill') return
+export const fillData = (displayData: DataForDisplay, data: DimensionTableData): DataForDisplay => {
+  return {
+    cells: mapTwoDimensionTable(displayData.cells, (cell, rowIndex, colIndex) => {
+      if (cell.type !== 'indicator') return cell
+      if (cell.indicator.type !== 'toFill') return cell
 
-    const crossNodes = getNodesInRowAndCol(displayData.cells, rowIndex, colIndex)
-    const crossDimensionNodes = crossNodes.filter(isDimensionCell)
-    // 所有真实的维度，用户作为 filter
-    const crossDimensionForFilter = crossDimensionNodes.filter(node => isFilterDimensionNodeValue(node.dimension))
-    // 作为指标的维度值，可能是表头，也可能是下钻路径中的一个节点
-    const crossFakeDimension = crossDimensionNodes.find(node => isIndicatorDimensionNodeValue(node.dimension))
-    if (!crossFakeDimension) {
-      throw new Error('未找到要计算的指标值')
-    }
-    const indicatorMeta = (crossFakeDimension.dimension as IndicatorDimensionNodeValue).value
-    const filterDimensionsValue = crossDimensionForFilter.map(item => (item.dimension as FilterDimensionNodeValue).value)
+      const crossNodes = getNodesInRowAndCol(displayData.cells, rowIndex, colIndex)
+      const crossDimensionNodes = crossNodes.filter(isDimensionCell)
+      // 所有真实的维度，用户作为 filter
+      const crossDimensionForFilter = crossDimensionNodes.filter(node => isFilterDimensionNodeValue(node.dimension))
+      // 作为指标的维度值，可能是表头，也可能是下钻路径中的一个节点
+      const crossFakeDimension = crossDimensionNodes.find(node => isIndicatorDimensionNodeValue(node.dimension))
+      if (!crossFakeDimension) {
+        throw new Error('未找到要计算的指标值')
+      }
+      const indicatorMeta = (crossFakeDimension.dimension as IndicatorDimensionNodeValue).value
+      const filterDimensionsValue = crossDimensionForFilter.map(item => (item.dimension as FilterDimensionNodeValue).value)
 
-    // 根据 crossDimensionNodes 从 data 中获取指标值
-    const indicatorValue = getIndicatorValue(data, indicatorMeta, filterDimensionsValue)
-  })
+      // 根据 crossDimensionNodes 从 data 中获取指标值
+      const indicatorValue = getIndicatorValue(data, indicatorMeta, filterDimensionsValue)
+
+      return cell // todo: fix
+    })
+  }
 }
+
+//#region test
+const main = () => {
+  const gmv: IndicatorMeta = { code: 'gmv', name: 'gmv' }
+  const profit: IndicatorMeta = { code: 'profit', name: 'profit' }
+  const profitToImprove: IndicatorMeta = { code: 'profit_to_improve', name: 'profit_to_improve' }
+
+  const region: DimensionMeta = { code: 'region', name: 'region' }
+  const bizLine: DimensionMeta = { code : 'biz_line', name: 'biz_line' }
+
+
+  const data: DimensionTableData = {
+
+  }
+}
+main()
+//#endregion
