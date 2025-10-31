@@ -307,7 +307,9 @@ export type DimensionTableUIConfig =
 //#endregion
 
 // region for ui, for render
-export type BaseCell = {};
+export type BaseCell = {
+  key?: string
+};
 
 export type CrossArea = BaseCell & {
   type: "cross_area";
@@ -328,6 +330,27 @@ export type AlignedCell = BaseCell & {
   type: "aligned_dimension";
   dimension: DimensionNodeValue;
   parent: CellWithAlign | null
+}
+
+export const getAllParent = (cell: AlignedCell): DimensionValue[] => {
+  let result: DimensionValue[] = []
+
+  let curNode: AlignedCell = cell
+  
+  while (curNode) {
+    const value = getDimensionValueFromNodeValue(cell.dimension)
+    if (!value) break
+
+    result.push(value)
+
+    if (curNode.parent?.type !== 'aligned_dimension') {
+      break
+    } else {
+      curNode = curNode.parent
+    }
+  }
+
+  return result
 }
 export const updateParent = (cell: AlignedCell, newParent: CellWithAlign | null) => {
   cell.parent = newParent
@@ -390,9 +413,6 @@ export const isCellValueEqual = (cell1: Cell, cell2: Cell) => {
   return false
 }
 export type DataForDisplay<T = Cell> = {
-  config?: {
-    alignToParentDimensions: DimensionMeta[];
-  };
   cells: TwoDimensionTable<T>;
 };
 // 获取列
@@ -490,12 +510,14 @@ export const getFullTableCells = (
             type: "cross_area",
             columnMeta: removeRepeat(
               getNodeInColToBottom(left.cells, rowIndex, colIndex)
-                .filter((node) => node.type === "dimension")
+                .filter((node) => {
+                  return node.type === "dimension" || node.type === 'aligned_dimension'
+                })
                 .map((node) => node.dimension)
             ),
             rowMeta: removeRepeat(
               getNodesInRowToRight(top.cells, rowIndex, colIndex)
-                .filter((node) => node.type === "dimension")
+                .filter((node) => node.type === "dimension" || node.type === 'aligned_dimension')
                 .map((node) => node.dimension)
             ),
           };
@@ -544,9 +566,9 @@ export const getDimensionMetaFromNodeValue = (dimensionNodeValue: DimensionNodeV
     return null
   }
 }
-export const getDimensionValueFromNodeValue = (dimensionNodeValue: DimensionNodeValue) => {
+export const getDimensionValueFromNodeValue = (dimensionNodeValue: DimensionNodeValue): DimensionValue | null => {
   if (dimensionNodeValue.type === 'dimension') {
-    return dimensionNodeValue.value.value
+    return dimensionNodeValue.value
   } else {
     return null
   }
@@ -1117,15 +1139,19 @@ export const fillData = (
       const indicator = indicators[0];
       if (!indicator) return cell;
 
-      const filters = nodes
+      const dimensionFilters = nodes
         .filter((node) => node.type === "dimension")
         .map((node) => node.dimension)
         .filter((node) => node.type === "dimension")
         .map((node) => node.value);
+      const alignedFilters = nodes
+        .filter((node) => node.type === 'aligned_dimension')
+        .map(getAllParent)
+        .reduce((acc, next) => ([...acc, ...next]), [])
       const value = getDataValueByIndicator(
         data,
         indicator.value.meta,
-        filters
+        [...dimensionFilters, ...alignedFilters]
       );
       if (!value) return cell;
       return {
@@ -1142,21 +1168,4 @@ export const fillData = (
     cells: newTable,
   };
 };
-//#endregion
-
-//#region test
-
-const main = () => {
-  const leftTree = buildTree(uiConfig.left.dimensions, tableData);
-  const leftTreeData = treeToDisplayCells(leftTree);
-  const topTree = buildTree(
-    getDrillPathFromUIHeaderWithIndicatorConfig(uiConfig.head),
-    tableData
-  );
-  const topTreeData = treeToDisplayCells(topTree);
-
-  const fullCells = getFullTableCells(leftTreeData, topTreeData);
-  console.log("full cells to fill is", JSON.stringify(fullCells));
-};
-main();
 //#endregion

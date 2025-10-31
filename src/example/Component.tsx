@@ -30,7 +30,6 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
   const dataToRender = useMemo(() => {
     const tableToRender = buildFullCells(uiConfig, tableData);
     const data = fillData(tableToRender, tableData);
-    console.log('final render data', data)
     return data
   }, [uiConfig, tableData]);
 
@@ -54,7 +53,7 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
                         border: "1px solid red",
                         color: "red",
                         display: "inline-block",
-                        width: "200px",
+                        width: "250px",
                       }}
                     >
                       {renders.dimensionRender(cell)}
@@ -70,7 +69,7 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
                         border: "1px solid red",
                         color: "red",
                         display: "inline-block",
-                        width: "200px",
+                        width: "250px",
                       }}
                     >
                       {renders.alignedCellRender(cell, { depth })}
@@ -84,7 +83,7 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
                         border: "1px solid blue",
                         color: "blue",
                         display: "inline-block",
-                        width: "200px",
+                        width: "250px",
                       }}
                     >
                       {renders.indicatorRender(cell)}
@@ -98,7 +97,7 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
                         border: "1px solid gray",
                         color: "gray",
                         display: "inline-block",
-                        width: "200px",
+                        width: "250px",
                       }}
                     >
                       {renders.crossAreaRender(cell, context)}
@@ -160,7 +159,7 @@ const DimensionTableComponent: React.FC<DimensionTableComponentProps> = (props) 
                 {
                   cell.columnMeta.map(meta => {
                     if (meta.type === "dimension") {
-                      return <span>{meta.value.meta.name}</span>;
+                      return <span>{meta.value.meta.name}|</span>;
                     }
                     return <span>-</span>;
                   })
