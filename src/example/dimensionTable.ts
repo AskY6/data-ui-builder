@@ -26,7 +26,7 @@ export const findNodeByRowAndDepth = <T>(
         return findNodeByRowAndDepth(
           nextTree.children,
           row -
-            treeLeafCountList.slice(0, i).reduce((acc, next) => acc + next, 0),
+          treeLeafCountList.slice(0, i).reduce((acc, next) => acc + next, 0),
           depth - 1
         );
       }
@@ -75,6 +75,9 @@ export const createEmptyTwoDimensionTable = (
     Array.from({ length: columnCount }, () => null)
   );
 };
+export const removeColumnsFromTable = <T>(table: TwoDimensionTable<T>, columnIndex: number): TwoDimensionTable<T> => {
+  return table.map(row => row.filter((_, index) => index !== columnIndex))
+}
 export const createEmptyTwoDimensionTableWithCell = <T>(
   rowCount: number,
   columnCount: number,
@@ -137,7 +140,7 @@ export const getNodeInColToBottom = <T>(
   rowIndex: number,
   columnIndex: number
 ): T[] => {
-  const tableRowCount = table[0].length;
+  const tableRowCount = table.length;
 
   const colItems: T[] = [];
   for (let i = rowIndex; i < tableRowCount; i++) {
@@ -230,17 +233,17 @@ const getAllDimensionValuesFromData = (
 //#region for ui, not for specific render. only config
 export type UIConfigDimension =
   | {
-      type: "dimension";
-      meta: DimensionMeta;
-      // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
-      alignToParent?: boolean;
-    }
+    type: "dimension";
+    meta: DimensionMeta;
+    // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
+    alignToParent?: boolean;
+  }
   | {
-      type: "indicator";
-      meta: { meta: IndicatorMeta; ignoreDimensions?: DimensionMeta[] }[]; // 应该是一组指标的描述。被当作伪维度时，IndicatorMeta 相当于维度枚举值，一组 IndicatorMeta 构成一个伪维度
-      // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
-      alignToParent?: boolean;
-    };
+    type: "indicator";
+    meta: { meta: IndicatorMeta; ignoreDimensions?: DimensionMeta[] }[]; // 应该是一组指标的描述。被当作伪维度时，IndicatorMeta 相当于维度枚举值，一组 IndicatorMeta 构成一个伪维度
+    // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
+    alignToParent?: boolean;
+  };
 export type UIHeaderNoIndicatorConfig = {
   dimensions: UIConfigDimension[];
 };
@@ -321,34 +324,102 @@ export type DimensionCell = BaseCell & {
   dimension: DimensionNodeValue;
 };
 
-export type IParent = {
-  children: AlignedCell[]
-}
-export type IChildren = {
-  parent: AlignedCell
-}
-export const getAlignedParentPath = (children: IChildren): AlignedCell[] => {
-  throw new Error("not implemented");
-  return []
-}
-export type AlignedCell = IParent & IChildren & BaseCell & {
+export type AlignedCell = BaseCell & {
   type: "aligned_dimension";
   dimension: DimensionNodeValue;
+  parent: CellWithAlign | null
+}
+export const isAlinedCell = (cell: CellWithAlign): cell is AlignedCell => {
+  return cell.type === 'aligned_dimension'
+}
+export type CellWithAlign = Cell | AlignedCell
+export const toAlignedCell = (cell: DimensionCell, parent: CellWithAlign | null): AlignedCell => {
+  return {
+    type: 'aligned_dimension',
+    dimension: cell.dimension,
+    parent: parent
+  }
 }
 
 export type Cell = IndicatorCell | DimensionCell | CrossArea;
 export const isDimensionCell = (cell: Cell): cell is DimensionCell => {
   return cell.type === "dimension";
 };
+export const getAlignedDepth = (cell: AlignedCell) => {
+  let depth = 0
+  let curCell: AlignedCell = cell
+  while (curCell.parent) {
+    depth++
+    if (isAlinedCell(curCell.parent)) {
+      curCell = curCell.parent
+    } else {
+      break
+    }
+  }
+  return depth
+}
+export const isDimensionCellEnumEqual = (cell1: DimensionCell, cell2: DimensionCell) => {
+  const nodeValue1 = cell1.dimension
+  const nodeValue2 = cell2.dimension
+  const isSameDimensionMeta = isSameDimensionNodeValue(nodeValue1, nodeValue2)
+
+  if (!isSameDimensionMeta) return false
+
+  const nodeValueEnum1 = getDimensionValueFromNodeValue(nodeValue1)
+  const nodeValueEnum2 = getDimensionValueFromNodeValue(nodeValue2)
+
+  if (nodeValueEnum1 === null || nodeValueEnum2 === null) return false
+  return nodeValueEnum1 === nodeValueEnum2
+}
 export const isIndicatorCell = (cell: Cell): cell is IndicatorCell => {
   return cell.type === "indicator";
 };
-export type DataForDisplay = {
+export const isCellValueEqual = (cell1: Cell, cell2: Cell) => {
+  if (cell1.type !== cell2.type) return false
+  if (cell1.type === 'cross_area' && cell2.type === 'cross_area') {
+    return true
+  } else if (cell1.type === 'dimension' &&cell2.type === 'dimension') {
+    return cell1.dimension.type
+  } else if (cell1.type === 'indicator' && cell2.type === 'indicator') {
+    return true
+  }
+  return false
+}
+export type DataForDisplay<T=Cell> = {
   config?: {
     alignToParentDimensions: DimensionMeta[];
   };
-  cells: TwoDimensionTable<Cell>;
+  cells: TwoDimensionTable<T>;
 };
+// 获取列
+export const getColumnFromTable = <T>(table: TwoDimensionTable<T>, columnIndex: number): T[] => {
+  return table.map(row => row[columnIndex])
+}
+// 根据 comunIndex 对应的列，进行合并
+export const narrowSameRowForTable = <T>(table: TwoDimensionTable<T>, columnIndex: number, equal: (item1: T, item2: T) => boolean): TwoDimensionTable<T> => {
+  let newTable: TwoDimensionTable<T> = []
+
+  let prevColumnItem: T = table[0]?.[columnIndex]
+
+  if (!prevColumnItem) return table
+
+  newTable.push(table[0])
+
+  for (let i = 1; i < table.length; i++) {
+    const columnItem = table[i][columnIndex]
+
+    // 新的一行中对应位置，与上一行相同，则 skip
+    if (equal(prevColumnItem, columnItem)) {
+      continue
+    } else {
+      newTable.push(table[i])
+
+      prevColumnItem = columnItem
+    }
+  }
+  return newTable
+}
+
 // 行列转置
 export const transposeTwoDimensionTable = <T>(
   table: TwoDimensionTable<T>
@@ -365,9 +436,9 @@ export const transposeTwoDimensionTable = <T>(
 
 //left 和 top 都是仅包含自己表头部分的子表格。需要将二者合并，默认的规则是：left 的每一行，都和 top 的每一列进行交叉，形成一个新表格。
 export const getFullTableCells = (
-  left: DataForDisplay,
-  _top: DataForDisplay
-): DataForDisplay => {
+  left: DataForDisplay<CellWithAlign>,
+  _top: DataForDisplay<CellWithAlign>
+): DataForDisplay<CellWithAlign> => {
   const top = { cells: transposeTwoDimensionTable(_top.cells) };
 
   const leftRowCount = left.cells.length;
@@ -405,7 +476,7 @@ export const getFullTableCells = (
   const totalColumnToTopColumnIndex = (colIndex: number) =>
     colIndex - leftColumnCount;
 
-  const mergedCells: TwoDimensionTable<Cell> =
+  const mergedCells: TwoDimensionTable<CellWithAlign> =
     createEmptyTwoDimensionTableWithCell(
       totalRowCount,
       totalColumnCount,
@@ -459,6 +530,23 @@ export type DimensionNodeValue =
   | FilterDimensionNodeValue
   | FilterDimensionPlaceholderNodeValue
   | IndicatorDimensionNodeValue;
+
+export const getDimensionMetaFromNodeValue = (dimensionNodeValue: DimensionNodeValue) => {
+  if (dimensionNodeValue.type === 'dimension') {
+    return dimensionNodeValue.value.meta
+  } else if (dimensionNodeValue.type === 'dimension_placeholder') {
+    return dimensionNodeValue.value
+  } else {
+    return null
+  }
+}
+export const getDimensionValueFromNodeValue = (dimensionNodeValue: DimensionNodeValue) => {
+  if (dimensionNodeValue.type === 'dimension') {
+    return dimensionNodeValue.value.value
+  } else {
+    return null
+  }
+}
 export const isSameDimensionNodeValue = (
   a: DimensionNodeValue,
   b: DimensionNodeValue
@@ -663,6 +751,75 @@ export const treeToDisplayCells = (
     ),
   };
 };
+//#region tableToAlignedTable
+export const tableToAlignedTable = (_table: DataForDisplay, uiConfig: UIConfigDimension[]): DataForDisplay<CellWithAlign> => {
+  const table = _table as DataForDisplay<CellWithAlign>
+  const alignedColumns = uiConfig
+    .filter(configItem => configItem.type === 'dimension')
+    .filter(config => config.alignToParent)
+    .map(item => item.meta)
+
+  const columnCount = table.cells[0]?.length
+  for (let i = columnCount - 1; i >= 0; i--) {
+    if (i === 0) continue
+
+    const columnData = getColumnFromTable(table.cells, i)
+    const prevColumnData = getColumnFromTable(table.cells, i - 1)
+
+    const firstNonCrossArea = columnData.filter(cell => cell.type !== 'cross_area')[0]
+    if (!firstNonCrossArea || firstNonCrossArea.type === 'indicator') continue
+
+    const dimensionNodeValue = firstNonCrossArea.dimension
+    const dimensionMeta = getDimensionMetaFromNodeValue(dimensionNodeValue)
+    if (!dimensionMeta) continue
+
+    const isCellAllDimensionAndEnumEqual = (cell1: Cell, cell2: Cell) => {
+        if (cell1.type !== 'dimension' || cell2.type !== 'dimension') return false
+        return isDimensionCellEnumEqual(cell1, cell2)
+    }
+    // 当前列需要隐藏
+    if (alignedColumns.some(alinedColumn => dimensionMetaEqual(alinedColumn, dimensionMeta))) {
+      table.cells = removeColumnsFromTable(table.cells, i)
+      table.cells = narrowSameRowForTable(table.cells, i - 1, (cell1, cell2) => {
+        if (cell1.type === 'aligned_dimension' || cell2.type === 'aligned_dimension') return false
+        return isCellAllDimensionAndEnumEqual(cell1, cell2)
+      })
+      
+      // 将移除后的列，补充到前一列的父节点下面
+
+      // narrow 后的列
+      const newColumns = getColumnFromTable(table.cells, i - 1)
+
+      // 从后往前，因为插入会导致数组变长。从后往前遍历，可以不关注数组长度的变化
+      for (let j = newColumns.length - 1 ; j >= 0; j--) {
+        const newColumnItem = newColumns[j]
+
+        const itemsShouldAlignToNewColumnItem = columnData.filter((_, index) => {
+          const parent = prevColumnData[index]
+          if (newColumnItem.type === 'aligned_dimension' || parent.type === 'aligned_dimension') return false
+          return isCellAllDimensionAndEnumEqual(newColumnItem, parent)
+        })
+        const toRow = (cell: AlignedCell): CellWithAlign[] => {
+          const prevCells = table.cells[j].slice(0, i - 1)
+          return [...prevCells, cell]
+        }
+
+
+        table.cells.splice(
+          j + 1, 
+          0, 
+          ...itemsShouldAlignToNewColumnItem
+            .filter(cell => cell.type === 'dimension')
+            .map(cell => toAlignedCell(cell, null))
+            .map(toRow)
+        )
+      }
+    }
+  }
+
+  return table
+}
+//#endregion
 
 //#region test data
 const gmv: IndicatorMeta = { code: "gmv", name: "gmv" };
@@ -680,7 +837,7 @@ const withoutIndicatorConfig: UIHeaderNoIndicatorConfig = {
   dimensions: [
     { type: "dimension", meta: region },
     { type: "dimension", meta: bizLine },
-    { type: "dimension", meta: subBizLine },
+    { type: "dimension", meta: subBizLine, alignToParent: true },
   ],
 };
 const withIndicatorConfig: UIHeaderWithIndicatorConfig = {
@@ -853,15 +1010,18 @@ export const uiConfig3: DimensionTableUIConfig = {
 export const buildTreeForFullCells = (
   _uiConfig: DimensionTableUIConfig,
   data: DimensionTableData
-) => {
+): { leftTreeData: DataForDisplay<CellWithAlign>, topTreeData: DataForDisplay<CellWithAlign> } => {
   if (_uiConfig.type === "indicator_in_head") {
     const leftTree = buildTree(_uiConfig.left.dimensions, data);
     const leftTreeData = treeToDisplayCells(leftTree);
+    tableToAlignedTable(leftTreeData, uiConfig.left.dimensions)
+
     const topTree = buildTree(
       getDrillPathFromUIHeaderWithIndicatorConfig(_uiConfig.head),
       data
     );
     const topTreeData = treeToDisplayCells(topTree);
+    tableToAlignedTable(topTreeData, uiConfig.head.dimensions)
     return { leftTreeData, topTreeData };
   } else if (_uiConfig.type === "indicator_in_left") {
     const leftTree = buildTree(
@@ -869,8 +1029,12 @@ export const buildTreeForFullCells = (
       data
     );
     const leftTreeData = treeToDisplayCells(leftTree);
+    tableToAlignedTable(leftTreeData, _uiConfig.left.dimensions)
+
     const topTree = buildTree(_uiConfig.head.dimensions, data);
     const topTreeData = treeToDisplayCells(topTree);
+    tableToAlignedTable(topTreeData, _uiConfig.head.dimensions)
+
     return { leftTreeData, topTreeData };
   } else {
     throw new Error("invalid ui config");
@@ -904,10 +1068,10 @@ export const getDataValueByIndicator = (
   );
 };
 export const fillData = (
-  tableToFill: DataForDisplay,
+  tableToFill: DataForDisplay<CellWithAlign>,
   data: DimensionTableData
-): DataForDisplay => {
-  const newTable: TwoDimensionTable<Cell> = mapTwoDimensionTable(
+): DataForDisplay<CellWithAlign> => {
+  const newTable: TwoDimensionTable<CellWithAlign> = mapTwoDimensionTable(
     tableToFill.cells,
     (cell, rowIndex, columnIndex) => {
       if (cell.type !== "indicator") return cell;

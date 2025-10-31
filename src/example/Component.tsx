@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import {
   buildFullCells,
   fillData,
+  type AlignedCell,
   type CrossArea,
   type DimensionCell,
   type DimensionTableData,
@@ -16,6 +17,7 @@ export type CommonCrossTableProps = {
   uiConfig: DimensionTableUIConfig;
   tableData: DimensionTableData;
   renders: {
+    alignedCellRender: (cell: AlignedCell) => React.ReactNode
     dimensionRender: (cell: DimensionCell) => React.ReactNode;
     indicatorRender: (cell: IndicatorCell) => React.ReactNode;
     crossAreaRender: (cell: CrossArea, context: CellRenderContext) => React.ReactNode;
@@ -55,6 +57,21 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
                       }}
                     >
                       {renders.dimensionRender(cell)}
+                    </div>
+                  );
+                case 'aligned_dimension':
+                  return (
+                    <div
+                      style={{
+                        fontWeight: "bold",
+                        padding: "5px",
+                        border: "1px solid red",
+                        color: "red",
+                        display: "inline-block",
+                        width: "200px",
+                      }}
+                    >
+                      {renders.alignedCellRender(cell)}
                     </div>
                   );
                 case "indicator":
@@ -102,31 +119,37 @@ export type DimensionTableComponentProps = {
 const DimensionTableComponent: React.FC<DimensionTableComponentProps> = (props) => {
   const { uiConfig, tableData } = props;
 
+  const baseDiemensionRender = (cell: DimensionCell) => {
+    switch (cell.dimension.type) {
+      case "dimension":
+        return <span>{cell.dimension.value.value}</span>;
+      case "indicator":
+        return <span>{cell.dimension.value.meta.name}</span>;
+      case "dimension_placeholder":
+        return <span>占位符：{cell.dimension.value.name}</span>;
+      default:
+        return ''
+    }
+  }
+
   return (
     <CommonCrossTable
       uiConfig={uiConfig}
       tableData={tableData}
       renders={{
-        dimensionRender: (cell) => {
-          switch (cell.dimension.type) {
-            case "dimension":
-              return <span>{cell.dimension.value.value}</span>;
-            case "indicator":
-              return <span>{cell.dimension.value.meta.name}</span>;
-            case "dimension_placeholder":
-              return <span>占位符：{cell.dimension.value.name}</span>;
-            default:
-              return ''
-          }
+        dimensionRender: baseDiemensionRender,
+        alignedCellRender: (cell) => {
+          return <div style={{ paddingLeft: 10 }}>
+            {
+              baseDiemensionRender({
+                type: 'dimension',
+                dimension: cell.dimension
+              })
+            }
+          </div>
         },
         indicatorRender: (cell) => {
           return props.indicatorRender(cell);
-          // switch (cell.indicator.type) {
-          //   case "value":
-          //     return <span>{cell.indicator.value.value}</span>;
-          //   default:
-          //     return <span>{cell.indicator.type}</span>;
-          // }
         },
         crossAreaRender: (cell, context) => {
           if (context.type === "indicator_in_head") {
@@ -141,6 +164,8 @@ const DimensionTableComponent: React.FC<DimensionTableComponentProps> = (props) 
                   })
                 }
               </span>
+            } else {
+              return <span>-</span>
             }
           } else if (context.type === "indicator_in_left") {
             if (cell.rowMeta.length > 0) {
