@@ -329,11 +329,15 @@ export type AlignedCell = BaseCell & {
   dimension: DimensionNodeValue;
   parent: CellWithAlign | null
 }
+export const updateParent = (cell: AlignedCell, newParent: CellWithAlign | null) => {
+  cell.parent = newParent
+}
 export const isAlinedCell = (cell: CellWithAlign): cell is AlignedCell => {
   return cell.type === 'aligned_dimension'
 }
 export type CellWithAlign = Cell | AlignedCell
-export const toAlignedCell = (cell: DimensionCell, parent: CellWithAlign | null): AlignedCell => {
+export const toAlignedCell = (cell: DimensionCell | AlignedCell, parent: CellWithAlign | null): AlignedCell => {
+  if (cell.type === 'aligned_dimension') return cell
   return {
     type: 'aligned_dimension',
     dimension: cell.dimension,
@@ -345,7 +349,7 @@ export type Cell = IndicatorCell | DimensionCell | CrossArea;
 export const isDimensionCell = (cell: Cell): cell is DimensionCell => {
   return cell.type === "dimension";
 };
-export const getAlignedDepth = (cell: AlignedCell) => {
+export const getAlignedDepth = (cell: AlignedCell): number => {
   let depth = 0
   let curCell: AlignedCell = cell
   while (curCell.parent) {
@@ -378,14 +382,14 @@ export const isCellValueEqual = (cell1: Cell, cell2: Cell) => {
   if (cell1.type !== cell2.type) return false
   if (cell1.type === 'cross_area' && cell2.type === 'cross_area') {
     return true
-  } else if (cell1.type === 'dimension' &&cell2.type === 'dimension') {
+  } else if (cell1.type === 'dimension' && cell2.type === 'dimension') {
     return cell1.dimension.type
   } else if (cell1.type === 'indicator' && cell2.type === 'indicator') {
     return true
   }
   return false
 }
-export type DataForDisplay<T=Cell> = {
+export type DataForDisplay<T = Cell> = {
   config?: {
     alignToParentDimensions: DimensionMeta[];
   };
@@ -773,9 +777,18 @@ export const tableToAlignedTable = (_table: DataForDisplay, uiConfig: UIConfigDi
     const dimensionMeta = getDimensionMetaFromNodeValue(dimensionNodeValue)
     if (!dimensionMeta) continue
 
-    const isCellAllDimensionAndEnumEqual = (cell1: Cell, cell2: Cell) => {
-        if (cell1.type !== 'dimension' || cell2.type !== 'dimension') return false
-        return isDimensionCellEnumEqual(cell1, cell2)
+    const toDimensionCell = (cell: DimensionCell | AlignedCell): DimensionCell => {
+      if (cell.type === 'dimension') return cell
+
+      return {
+        type: 'dimension',
+        dimension: cell.dimension
+      }
+    }
+    const isCellAllDimensionAndEnumEqual = (cell1: CellWithAlign, cell2: CellWithAlign) => {
+      if (cell1.type !== 'dimension' && cell1.type !== 'aligned_dimension') return false
+      if (cell2.type !== 'dimension' && cell2.type !== 'aligned_dimension') return false
+      return isDimensionCellEnumEqual(toDimensionCell(cell1), toDimensionCell(cell2))
     }
     // 当前列需要隐藏
     if (alignedColumns.some(alinedColumn => dimensionMetaEqual(alinedColumn, dimensionMeta))) {
@@ -784,34 +797,48 @@ export const tableToAlignedTable = (_table: DataForDisplay, uiConfig: UIConfigDi
         if (cell1.type === 'aligned_dimension' || cell2.type === 'aligned_dimension') return false
         return isCellAllDimensionAndEnumEqual(cell1, cell2)
       })
-      
+
       // 将移除后的列，补充到前一列的父节点下面
 
       // narrow 后的列
       const newColumns = getColumnFromTable(table.cells, i - 1)
 
       // 从后往前，因为插入会导致数组变长。从后往前遍历，可以不关注数组长度的变化
-      for (let j = newColumns.length - 1 ; j >= 0; j--) {
+      for (let j = newColumns.length - 1; j >= 0; j--) {
         const newColumnItem = newColumns[j]
 
+        // 确定有哪些是要 align 到父节点的
         const itemsShouldAlignToNewColumnItem = columnData.filter((_, index) => {
           const parent = prevColumnData[index]
-          if (newColumnItem.type === 'aligned_dimension' || parent.type === 'aligned_dimension') return false
           return isCellAllDimensionAndEnumEqual(newColumnItem, parent)
         })
+
         const toRow = (cell: AlignedCell): CellWithAlign[] => {
           const prevCells = table.cells[j].slice(0, i - 1)
           return [...prevCells, cell]
         }
 
+        const newItems = itemsShouldAlignToNewColumnItem
+          .filter(cell => cell.type === 'dimension' || cell.type === 'aligned_dimension')
+          // todo：转换为 alignedCell 后，需要更新子节点中的标记
+          .map(cell => {
+
+            const newCell = toAlignedCell(cell, newColumnItem)
+
+            itemsShouldAlignToNewColumnItem
+              .filter(item => item.type === 'aligned_dimension')
+              .filter(item => item.parent === cell)
+              .forEach(item => updateParent(item, newCell))
+
+            return newCell
+          })
+          .map(toRow)
+
 
         table.cells.splice(
-          j + 1, 
-          0, 
-          ...itemsShouldAlignToNewColumnItem
-            .filter(cell => cell.type === 'dimension')
-            .map(cell => toAlignedCell(cell, null))
-            .map(toRow)
+          j + 1,
+          0,
+          ...newItems
         )
       }
     }
@@ -836,7 +863,7 @@ const dateDimension: DimensionMeta = { code: "date", name: "date" };
 const withoutIndicatorConfig: UIHeaderNoIndicatorConfig = {
   dimensions: [
     { type: "dimension", meta: region },
-    { type: "dimension", meta: bizLine },
+    { type: "dimension", meta: bizLine, alignToParent: true },
     { type: "dimension", meta: subBizLine, alignToParent: true },
   ],
 };

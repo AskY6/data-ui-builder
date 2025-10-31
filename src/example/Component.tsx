@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import {
   buildFullCells,
   fillData,
+  getAlignedDepth,
   type AlignedCell,
   type CrossArea,
   type DimensionCell,
@@ -17,7 +18,7 @@ export type CommonCrossTableProps = {
   uiConfig: DimensionTableUIConfig;
   tableData: DimensionTableData;
   renders: {
-    alignedCellRender: (cell: AlignedCell) => React.ReactNode
+    alignedCellRender: (cell: AlignedCell, option: { depth: number }) => React.ReactNode
     dimensionRender: (cell: DimensionCell) => React.ReactNode;
     indicatorRender: (cell: IndicatorCell) => React.ReactNode;
     crossAreaRender: (cell: CrossArea, context: CellRenderContext) => React.ReactNode;
@@ -60,6 +61,7 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
                     </div>
                   );
                 case 'aligned_dimension':
+                  const depth = getAlignedDepth(cell)
                   return (
                     <div
                       style={{
@@ -71,7 +73,7 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
                         width: "200px",
                       }}
                     >
-                      {renders.alignedCellRender(cell)}
+                      {renders.alignedCellRender(cell, { depth })}
                     </div>
                   );
                 case "indicator":
@@ -138,8 +140,8 @@ const DimensionTableComponent: React.FC<DimensionTableComponentProps> = (props) 
       tableData={tableData}
       renders={{
         dimensionRender: baseDiemensionRender,
-        alignedCellRender: (cell) => {
-          return <div style={{ paddingLeft: 10 }}>
+        alignedCellRender: (cell, { depth }) => {
+          return <div style={{ paddingLeft: 10 * depth  }}>
             {
               baseDiemensionRender({
                 type: 'dimension',
