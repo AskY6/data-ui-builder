@@ -744,6 +744,29 @@ export const buildTree = (
   return [];
 };
 
+// 生成代表 cell 的唯一 key。 由于来源是树，因此对 [Node, ParentNode] 进行唯一化 key 即可。 即对两个 node 取标准 key, 拼接后即为节点对应的唯一 key
+// todo
+export const generateSingleCellKey = (cell: Cell): string => {
+  return ''
+}
+export const generateKeyForCell = (option: { cell: Cell, parentCell: Cell | null}): string => {
+  return ''
+}
+export const attachMergeKey = (data: DataForDisplay): DataForDisplay => {
+  return {
+    cells: mapTwoDimensionTable(data.cells, (cell, rowIndex, colIndex) => {
+      return {
+        ...cell,
+        key: generateKeyForCell({ 
+          cell,
+          // todo: 计算 parent cell 
+          parentCell: null
+        }) ?? undefined
+      }
+    })
+  }
+}
+
 // 仅填充了维度
 export const treeToDisplayCells = (
   treeList: Tree<DimensionNodeValue>[]
@@ -885,7 +908,7 @@ const dateDimension: DimensionMeta = { code: "date", name: "date" };
 const withoutIndicatorConfig: UIHeaderNoIndicatorConfig = {
   dimensions: [
     { type: "dimension", meta: region },
-    { type: "dimension", meta: bizLine, alignToParent: true },
+    { type: "dimension", meta: bizLine, alignToParent: false },
     { type: "dimension", meta: subBizLine, alignToParent: true },
   ],
 };
