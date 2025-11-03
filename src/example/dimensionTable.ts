@@ -1,4 +1,4 @@
-//#region tool
+//#region 抽象树、二维表格数据结构
 export type Tree<T> = {
   value: T | null;
   children: Tree<T>[];
@@ -155,21 +155,25 @@ export const getNodeInColToBottom = <T>(
 
 //#endregion
 
-//#region base define
+//#region 维度、指标、数据源
 export type DimensionMeta = {
   code: string;
   name: string;
 };
 export const dimensionMetaEqual = (a: DimensionMeta, b: DimensionMeta) =>
   a.code === b.code;
-export type DimensionValue = {
+export type DimensionValue<T> = {
   meta: DimensionMeta; // 维度的元信息
-  value: string; // 维度枚举值的值
+  value: T; // 维度枚举值的值
   order: number; // 排序的绝对位置
 };
-export const isDimensionValueEqual = (a: DimensionValue, b: DimensionValue) => {
+export const isDimensionValueEqual = <T>(
+  a: DimensionValue<T>,
+  b: DimensionValue<T>,
+  equal: (a: T, b: T) => boolean = (a, b) => a === b
+) => {
   const metaEqual = dimensionMetaEqual(a.meta, b.meta);
-  const valueEqual = a.value === b.value;
+  const valueEqual = equal(a.value, b.value);
   return metaEqual && valueEqual;
 };
 /**
@@ -178,22 +182,26 @@ export const isDimensionValueEqual = (a: DimensionValue, b: DimensionValue) => {
  * @param b
  * @returns
  */
-export const aIsBSuperSet = (a: DimensionValue[], b: DimensionValue[]) => {
+export const aIsBSuperSet = <T>(
+  a: DimensionValue<T>[],
+  b: DimensionValue<T>[]
+) => {
+  // todo: 外部需要支持 dimension 的比较方法
   const bIna = b.every((bv) => a.some((av) => isDimensionValueEqual(av, bv)));
   return bIna;
 };
-export const dimensionValueEqualInMeta = (
-  a: DimensionValue,
-  b: DimensionValue
+export const dimensionValueEqualInMeta = <T>(
+  a: DimensionValue<T>,
+  b: DimensionValue<T>
 ) => dimensionMetaEqual(a.meta, b.meta);
 
 export type IndicatorMeta = {
   code: string;
   name: string;
 };
-export type IndicatorValue = {
+export type IndicatorValue<U> = {
   meta: IndicatorMeta;
-  value: number; // todo: 细化 value
+  value: U;
 };
 
 export type DimensionTableQuery = {
@@ -202,21 +210,22 @@ export type DimensionTableQuery = {
   // 指标本身无顺序，只是表达每一条信息需要返回这些字段
   indicators: IndicatorMeta[];
 };
-export type DimensionTableData = {
+export type DimensionTableData<U, T = string> = {
   records: {
-    dimensions: DimensionValue[];
-    indicators: IndicatorValue[];
+    dimensions: DimensionValue<T>[];
+    indicators: IndicatorValue<U>[];
   }[];
 };
 
-// 以 dimensionMetaList 为 key， 找到所有 key 的可能组合
-const getAllDimensionValuesFromData = (
-  data: DimensionTableData,
+// 从数据源里查询所有的维度枚举值
+const getAllDimensionValuesFromData = <U, T>(
+  data: DimensionTableData<U, T>,
   dimensionMeta: DimensionMeta,
-  shouldPick: (record: DimensionTableData["records"][number]) => boolean = () =>
-    true
-): DimensionValue[] => {
-  const values: DimensionValue[] = [];
+  shouldPick: (
+    record: DimensionTableData<U, T>["records"][number]
+  ) => boolean = () => true
+): DimensionValue<T>[] => {
+  const values: DimensionValue<T>[] = [];
   for (const record of data.records) {
     if (!shouldPick(record)) continue;
     const dimensionValue = record.dimensions.find(
@@ -233,39 +242,22 @@ const getAllDimensionValuesFromData = (
 };
 //#endregion
 
-//#region for ui, not for specific render. only config
-export type UIConfigDimension =
-  | {
-      type: "dimension";
-      meta: DimensionMeta;
-      // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
-      alignToParent?: boolean;
-    }
-  | {
-      type: "indicator";
-      meta: { meta: IndicatorMeta; ignoreDimensions?: DimensionMeta[] }[]; // 应该是一组指标的描述。被当作伪维度时，IndicatorMeta 相当于维度枚举值，一组 IndicatorMeta 构成一个伪维度
-      // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
-      alignToParent?: boolean;
-    };
+//#region 配置项。可以序列化的结构
+export type UIConfigDimensionItem = {
+  type: "dimension";
+  meta: DimensionMeta;
+  // 展示上是否委托于父节点。用途：层级结构在一列中展示，通过缩进等方式在一列中展示层级结构
+  alignToParent?: boolean;
+};
+export type UIConfigIndicatorItem = {
+  type: "indicator";
+  meta: { meta: IndicatorMeta; ignoreDimensions?: DimensionMeta[] }[]; // 应该是一组指标的描述。被当作伪维度时，IndicatorMeta 相当于维度枚举值，一组 IndicatorMeta 构成一个伪维度
+};
+export type UIConfigItem = UIConfigDimensionItem | UIConfigIndicatorItem;
+
 export type UIHeaderNoIndicatorConfig = {
-  dimensions: UIConfigDimension[];
+  dimensions: UIConfigItem[];
 };
-
-export const isAlignToParent = (dimension: UIConfigDimension) =>
-  Boolean(dimension.alignToParent);
-export const isNotAlignToParent = (dimension: UIConfigDimension) =>
-  !isAlignToParent(dimension);
-export const checkUIHeaderNoIndicatorConfig = (
-  config: UIHeaderNoIndicatorConfig
-) => {
-  // alignToParent 的节点后，不允许再有独立的 dimension，也必须 alignToParent
-  if (config.dimensions.every(isNotAlignToParent)) return true;
-
-  const firstAlignIndex = config.dimensions.findIndex(isAlignToParent);
-
-  return config.dimensions.slice(firstAlignIndex).every(isAlignToParent);
-};
-
 export type UIHeaderWithIndicatorConfig = UIHeaderNoIndicatorConfig & {
   // 数组顺序表示下钻维度
   indicator: {
@@ -273,10 +265,12 @@ export type UIHeaderWithIndicatorConfig = UIHeaderNoIndicatorConfig & {
     index: number; // 插入的位置，指标未必在末端，如果插入在维度列表的中间，那么处于 indicator 之后的维度需要被多次展开（不同指标下都要展开一次）
   };
 };
+
+// 从 UIHeaderWithIndicatorConfig 中生成下钻路径
 export const getDrillPathFromUIHeaderWithIndicatorConfig = (
   config: UIHeaderWithIndicatorConfig
 ): DrillPath => {
-  const indicatorNode: UIConfigDimension = {
+  const indicatorNode: UIConfigItem = {
     type: "indicator",
     meta: config.indicator.meta,
   };
@@ -286,12 +280,6 @@ export const getDrillPathFromUIHeaderWithIndicatorConfig = (
     indicatorNode,
     ...config.dimensions.slice(indicatorIndex),
   ];
-};
-export const checkUIHeaderWithIndicatorConfigValid = (
-  config: UIHeaderWithIndicatorConfig
-) => {
-  const indicatorResult = config.indicator.index < config.dimensions.length;
-  return checkUIHeaderNoIndicatorConfig(config) && indicatorResult;
 };
 
 export type IndicatorInHeadConfig = {
@@ -309,389 +297,14 @@ export type DimensionTableUIConfig =
   | IndicatorInLeftConfig;
 //#endregion
 
-// region for ui, for render
-export type BaseCell = {
-  key?: string;
-};
-
-export type CrossArea = BaseCell & {
-  type: "cross_area";
-  columnMeta: DimensionNodeValue[];
-  rowMeta: DimensionNodeValue[];
-};
-
-export type IndicatorCell = BaseCell & {
-  type: "indicator";
-  indicator: { type: "value"; value: IndicatorValue } | { type: "toFill" };
-};
-export type DimensionCell = BaseCell & {
-  type: "dimension";
-  dimension: DimensionNodeValue;
-};
-
-export type AlignedCell = BaseCell & {
-  type: "aligned_dimension";
-  dimension: DimensionNodeValue;
-  parent: CellWithAlign | null;
-};
-
-export const getAllParent = (cell: AlignedCell): DimensionValue[] => {
-  let result: DimensionValue[] = [];
-
-  let curNode: AlignedCell = cell;
-
-  while (curNode) {
-    const value = getDimensionValueFromNodeValue(cell.dimension);
-    if (!value) break;
-
-    result.push(value);
-
-    if (curNode.parent?.type !== "aligned_dimension") {
-      break;
-    } else {
-      curNode = curNode.parent;
-    }
-  }
-
-  return result;
-};
-export const updateParent = (
-  cell: AlignedCell,
-  newParent: CellWithAlign | null
-) => {
-  cell.parent = newParent;
-};
-export const isAlinedCell = (cell: CellWithAlign): cell is AlignedCell => {
-  return cell.type === "aligned_dimension";
-};
-export type CellWithAlign = Cell | AlignedCell;
-export const toAlignedCell = (
-  cell: DimensionCell | AlignedCell,
-  parent: CellWithAlign | null
-): AlignedCell => {
-  if (cell.type === "aligned_dimension") return cell;
-  return {
-    type: "aligned_dimension",
-    dimension: cell.dimension,
-    parent: parent,
-  };
-};
-
-export type Cell = IndicatorCell | DimensionCell | CrossArea;
-export const isDimensionCell = (cell: Cell): cell is DimensionCell => {
-  return cell.type === "dimension";
-};
-export const getAlignedDepth = (cell: AlignedCell): number => {
-  let depth = 0;
-  let curCell: AlignedCell = cell;
-  while (curCell.parent) {
-    depth++;
-    if (isAlinedCell(curCell.parent)) {
-      curCell = curCell.parent;
-    } else {
-      break;
-    }
-  }
-  return depth;
-};
-export const isDimensionCellEnumEqual = (
-  cell1: DimensionCell,
-  cell2: DimensionCell
-) => {
-  const nodeValue1 = cell1.dimension;
-  const nodeValue2 = cell2.dimension;
-  const isSameDimensionMeta = isSameDimensionNodeValue(nodeValue1, nodeValue2);
-
-  if (!isSameDimensionMeta) return false;
-
-  const nodeValueEnum1 = getDimensionValueFromNodeValue(nodeValue1);
-  const nodeValueEnum2 = getDimensionValueFromNodeValue(nodeValue2);
-
-  if (nodeValueEnum1 === null || nodeValueEnum2 === null) return false;
-  return nodeValueEnum1 === nodeValueEnum2;
-};
-export const isIndicatorCell = (cell: Cell): cell is IndicatorCell => {
-  return cell.type === "indicator";
-};
-export const isCellValueEqual = (cell1: Cell, cell2: Cell) => {
-  if (cell1.type !== cell2.type) return false;
-  if (cell1.type === "cross_area" && cell2.type === "cross_area") {
-    return true;
-  } else if (cell1.type === "dimension" && cell2.type === "dimension") {
-    return cell1.dimension.type;
-  } else if (cell1.type === "indicator" && cell2.type === "indicator") {
-    return true;
-  }
-  return false;
-};
-export type DataForDisplay<T = Cell> = {
-  cells: TwoDimensionTable<T>;
-};
-// 获取列
-export const getColumnFromTable = <T>(
-  table: TwoDimensionTable<T>,
-  columnIndex: number
-): T[] => {
-  return table.map((row) => row[columnIndex]);
-};
-// 根据 comunIndex 对应的列，进行合并
-export const narrowSameRowForTable = <T>(
-  table: TwoDimensionTable<T>,
-  columnIndex: number,
-  equal: (item1: T, item2: T) => boolean
-): TwoDimensionTable<T> => {
-  let newTable: TwoDimensionTable<T> = [];
-
-  let prevColumnItem: T = table[0]?.[columnIndex];
-
-  if (!prevColumnItem) return table;
-
-  newTable.push(table[0]);
-
-  for (let i = 1; i < table.length; i++) {
-    const columnItem = table[i][columnIndex];
-
-    // 新的一行中对应位置，与上一行相同，则 skip
-    if (equal(prevColumnItem, columnItem)) {
-      continue;
-    } else {
-      newTable.push(table[i]);
-
-      prevColumnItem = columnItem;
-    }
-  }
-  return newTable;
-};
-
-// 行列转置
-export const transposeTwoDimensionTable = <T>(
-  table: TwoDimensionTable<T>
-): TwoDimensionTable<T> => {
-  const newRowCount = table[0]?.length;
-  const newColumnCount = table.length;
-  const newTable = createEmptyTwoDimensionTableWithCell(
-    newRowCount,
-    newColumnCount,
-    (rowIndex, columnIndex) => table[columnIndex][rowIndex]
-  );
-  return newTable;
-};
-
-//left 和 top 都是仅包含自己表头部分的子表格。需要将二者合并，默认的规则是：left 的每一行，都和 top 的每一列进行交叉，形成一个新表格。
-export const getFullTableCells = (
-  left: DataForDisplay<CellWithAlign>,
-  _top: DataForDisplay<CellWithAlign>
-): DataForDisplay<CellWithAlign> => {
-  const top = { cells: transposeTwoDimensionTable(_top.cells) };
-
-  const leftRowCount = left.cells.length;
-  const leftColumnCount = left.cells[0]?.length;
-
-  const topRowCount = top.cells.length;
-  const topColumnCount = top.cells[0]?.length;
-
-  const totalRowCount = leftRowCount + topRowCount;
-  const totalColumnCount = leftColumnCount + topColumnCount;
-
-  const fixedLeftRowStartIndex = topRowCount;
-  const fixedLeftRowEndIndex = topRowCount + leftRowCount;
-  const fixedLeftColumnStartIndex = 0;
-  const fixedLeftColumnEndIndex = leftColumnCount;
-
-  const fixedTopRowStartIndex = 0;
-  const fixedTopRowEndIndex = topRowCount;
-  const fixedTopColumnStartIndex = leftColumnCount;
-  const fixedTopColumnEndIndex = leftColumnCount + topColumnCount;
-
-  const isLeftColumns = (index: number) =>
-    index >= fixedLeftColumnStartIndex && index < fixedLeftColumnEndIndex;
-  const isLeftRows = (index: number) =>
-    index >= fixedLeftRowStartIndex && index < fixedLeftRowEndIndex;
-  const isTopColumns = (index: number) =>
-    index >= fixedTopColumnStartIndex && index < fixedTopColumnEndIndex;
-  const isTopRows = (index: number) =>
-    index >= fixedTopRowStartIndex && index < fixedTopRowEndIndex;
-
-  const isCrossArea = (rowIndex: number, colIndex: number) =>
-    rowIndex < topRowCount && colIndex < leftColumnCount;
-
-  const totalRowToLeftRowIndex = (rowIndex: number) => rowIndex - topRowCount;
-  const totalColumnToTopColumnIndex = (colIndex: number) =>
-    colIndex - leftColumnCount;
-
-  const mergedCells: TwoDimensionTable<CellWithAlign> =
-    createEmptyTwoDimensionTableWithCell(
-      totalRowCount,
-      totalColumnCount,
-      (rowIndex, colIndex) => {
-        if (isCrossArea(rowIndex, colIndex)) {
-          return {
-            type: "cross_area",
-            columnMeta: removeRepeat(
-              getNodeInColToBottom(left.cells, rowIndex, colIndex)
-                .filter((node) => {
-                  return (
-                    node.type === "dimension" ||
-                    node.type === "aligned_dimension"
-                  );
-                })
-                .map((node) => node.dimension)
-            ),
-            rowMeta: removeRepeat(
-              getNodesInRowToRight(top.cells, rowIndex, colIndex)
-                .filter(
-                  (node) =>
-                    node.type === "dimension" ||
-                    node.type === "aligned_dimension"
-                )
-                .map((node) => node.dimension)
-            ),
-          };
-        } else if (isLeftRows(rowIndex) && isLeftColumns(colIndex)) {
-          return left.cells[totalRowToLeftRowIndex(rowIndex)][colIndex];
-        } else if (isTopRows(rowIndex) && isTopColumns(colIndex)) {
-          return top.cells[rowIndex][totalColumnToTopColumnIndex(colIndex)];
-        } else {
-          return { type: "indicator", indicator: { type: "toFill" } };
-        }
-      }
-    );
-  return { cells: mergedCells };
-};
-//#endregion
-
-// 下钻路径可能是维度或者指标。
-// 维度代表正常的下钻
-// 指标代表伪维度
-//  1. 只是对前序维度的一个透明代理
-//  2. 如果指标本身配置了有效的维度，那么如果后续的维度无效，则不按后续的维度下钻，而是聚合成一个值
-export type DrillPath = UIConfigDimension[];
-export type FilterDimensionNodeValue = {
-  type: "dimension"; // -> filter
-  value: DimensionValue;
-};
-export type IndicatorDimensionNodeValue = {
-  type: "indicator"; // -> proxy
-  value: { meta: IndicatorMeta; ignoreDimensions?: DimensionMeta[] };
-};
-export type FilterDimensionPlaceholderNodeValue = {
-  type: "dimension_placeholder"; // -> placeholder
-  value: DimensionMeta;
-};
-export type DimensionNodeValue =
-  | FilterDimensionNodeValue
-  | FilterDimensionPlaceholderNodeValue
-  | IndicatorDimensionNodeValue;
-
-export const getDimensionMetaFromNodeValue = (
-  dimensionNodeValue: DimensionNodeValue
-) => {
-  if (dimensionNodeValue.type === "dimension") {
-    return dimensionNodeValue.value.meta;
-  } else if (dimensionNodeValue.type === "dimension_placeholder") {
-    return dimensionNodeValue.value;
-  } else {
-    return null;
-  }
-};
-export const getDimensionValueFromNodeValue = (
-  dimensionNodeValue: DimensionNodeValue
-): DimensionValue | null => {
-  if (dimensionNodeValue.type === "dimension") {
-    return dimensionNodeValue.value;
-  } else {
-    return null;
-  }
-};
-export const isSameDimensionNodeValue = (
-  a: DimensionNodeValue,
-  b: DimensionNodeValue
-): boolean => {
-  if (a.type !== b.type) return false;
-  if (a.type === "dimension" && b.type === "dimension") {
-    return a.value.meta.code === b.value.meta.code;
-  }
-  if (a.type === "indicator" && b.type === "indicator") {
-    return a.value.meta.code === b.value.meta.code;
-  }
-  if (
-    a.type === "dimension_placeholder" &&
-    b.type === "dimension_placeholder"
-  ) {
-    return a.value.code === b.value.code;
-  }
-  return false;
-};
-
-export const removeRepeat = (
-  dimensionNodeValues: DimensionNodeValue[]
-): DimensionNodeValue[] => {
-  const values: DimensionNodeValue[] = [];
-  for (const value of dimensionNodeValues) {
-    if (!values.some((v) => isSameDimensionNodeValue(v, value))) {
-      values.push(value);
-    }
-  }
-  return values;
-};
-
-export const isFilterDimensionValidForAllIndicatorInPath = (
-  drillPath: DrillPath,
-  nodeValues: DimensionNodeValue[]
-) => {
-  const indicators = nodeValues.filter((node) => node.type === "indicator");
-  const valid = indicators.every((indicator) => {
-    return drillPath.every((path) => {
-      if (path.type === "dimension") {
-        return isDimensionValidateForIndicator(path.meta, indicator.value.meta);
-      }
-      return true;
-    });
-  });
-  return valid;
-};
-
-export const isFilterDimensionNodeValue = (
-  node: DimensionNodeValue
-): node is FilterDimensionNodeValue => {
-  return node.type === "dimension";
-};
-export const isIndicatorDimensionNodeValue = (
-  node: DimensionNodeValue
-): node is IndicatorDimensionNodeValue => {
-  return node.type === "indicator";
-};
-/**
- * 检查维度对于指标是否有意义
- * @param dimension
- * @param indicator
- */
-export const isDimensionValidateForIndicator = (
-  dimension: DimensionMeta,
-  indicator: IndicatorMeta
-): boolean => {
-  console.log(dimension, indicator);
-  // throw new Error("not implemented");
-  return true;
-};
-export const createDimensionNodeValue = (
-  value: DimensionValue
-): DimensionNodeValue => {
-  return { type: "dimension", value };
-};
-export const createIndicatorNodeValue = (value: {
-  meta: IndicatorMeta;
-  ignoreDimensions?: DimensionMeta[];
-}): DimensionNodeValue => {
-  return { type: "indicator", value };
-};
-
+//#region 树和表格
+//#region tree
 // 根据下钻路径和维度枚举值，构建 tree。 可以同时适用于 行 和 列
-export const buildTree = (
+export const buildTree = <U, T>(
   drillPath: DrillPath,
-  data: DimensionTableData,
-  preDimensionValues: DimensionNodeValue[] = []
-): Tree<DimensionNodeValue>[] => {
+  data: DimensionTableData<U, T>,
+  preDimensionValues: DimensionNodeValue<T>[] = []
+): Tree<DimensionNodeValue<T>>[] => {
   if (drillPath.length === 0) return [];
 
   const firstPath = drillPath[0];
@@ -743,9 +356,26 @@ export const buildTree = (
         return isDimensionListMatch && dimensionValidate;
       }
     );
-    const treeList: Tree<DimensionNodeValue>[] = dimensionValues.map(
+    const treeList: Tree<DimensionNodeValue<T>>[] = dimensionValues.map(
       (value) => {
-        const nodeValue = createDimensionNodeValue(value);
+        const nodeValue = createDimensionNodeValue<T>(value);
+        return {
+          value: nodeValue,
+          children: buildTree<U, T>(restPath, data, [
+            ...preDimensionValues,
+            nodeValue,
+          ]),
+        };
+      }
+    );
+    return treeList;
+  }
+
+  if (firstPath.type === "indicator") {
+    const indicatorMeta = firstPath.meta;
+    const treeList: Tree<DimensionNodeValue<T>>[] = indicatorMeta.map(
+      (value) => {
+        const nodeValue = createIndicatorNodeValue<T>(value);
         return {
           value: nodeValue,
           children: buildTree(restPath, data, [
@@ -758,24 +388,361 @@ export const buildTree = (
     return treeList;
   }
 
-  if (firstPath.type === "indicator") {
-    // indicatorMeta -> IndicatorMeta[] -> Tree<DimensionNodeValue>[]
-    const indicatorMeta = firstPath.meta;
-    const treeList: Tree<DimensionNodeValue>[] = indicatorMeta.map((value) => {
-      const nodeValue = createIndicatorNodeValue(value);
-      return {
-        value: nodeValue,
-        children: buildTree(restPath, data, [...preDimensionValues, nodeValue]),
-      };
-    });
-    return treeList;
-  }
-
   return [];
 };
+//#endregion
 
+//#region 维度单元格内的内容，是 cell 的属性之一
+// 下钻路径可能是维度或者指标。
+// 维度代表正常的下钻
+// 指标代表伪维度
+//  1. 只是对前序维度的一个透明代理
+//  2. 如果指标本身配置了有效的维度，那么如果后续的维度无效，则不按后续的维度下钻，而是聚合成一个值
+export type DrillPath = UIConfigItem[];
+export type FilterDimensionNodeValue<T> = {
+  type: "dimension"; // -> filter
+  value: DimensionValue<T>;
+};
+export type IndicatorDimensionNodeValue = {
+  type: "indicator"; // -> proxy
+  value: { meta: IndicatorMeta; ignoreDimensions?: DimensionMeta[] };
+};
+export type FilterDimensionPlaceholderNodeValue = {
+  type: "dimension_placeholder"; // -> placeholder
+  value: DimensionMeta;
+};
+export type DimensionNodeValue<T = string> =
+  | FilterDimensionNodeValue<T>
+  | FilterDimensionPlaceholderNodeValue
+  | IndicatorDimensionNodeValue;
+
+export const getDimensionMetaFromNodeValue = <T>(
+  dimensionNodeValue: DimensionNodeValue<T>
+) => {
+  if (dimensionNodeValue.type === "dimension") {
+    return dimensionNodeValue.value.meta;
+  } else if (dimensionNodeValue.type === "dimension_placeholder") {
+    return dimensionNodeValue.value;
+  } else {
+    return null;
+  }
+};
+export const getDimensionValueFromNodeValue = <T>(
+  dimensionNodeValue: DimensionNodeValue<T>
+): DimensionValue<T> | null => {
+  if (dimensionNodeValue.type === "dimension") {
+    return dimensionNodeValue.value;
+  } else {
+    return null;
+  }
+};
+export const isSameDimensionNodeValue = <T>(
+  a: DimensionNodeValue<T>,
+  b: DimensionNodeValue<T>
+): boolean => {
+  if (a.type !== b.type) return false;
+  if (a.type === "dimension" && b.type === "dimension") {
+    return a.value.meta.code === b.value.meta.code;
+  }
+  if (a.type === "indicator" && b.type === "indicator") {
+    return a.value.meta.code === b.value.meta.code;
+  }
+  if (
+    a.type === "dimension_placeholder" &&
+    b.type === "dimension_placeholder"
+  ) {
+    return a.value.code === b.value.code;
+  }
+  return false;
+};
+
+export const removeRepeat = <T>(
+  dimensionNodeValues: DimensionNodeValue<T>[]
+): DimensionNodeValue<T>[] => {
+  const values: DimensionNodeValue<T>[] = [];
+  for (const value of dimensionNodeValues) {
+    if (!values.some((v) => isSameDimensionNodeValue(v, value))) {
+      values.push(value);
+    }
+  }
+  return values;
+};
+
+export const isFilterDimensionValidForAllIndicatorInPath = (
+  drillPath: DrillPath,
+  nodeValues: DimensionNodeValue[]
+) => {
+  const indicators = nodeValues.filter((node) => node.type === "indicator");
+  const valid = indicators.every((indicator) => {
+    return drillPath.every((path) => {
+      if (path.type === "dimension") {
+        return isDimensionValidateForIndicator(path.meta, indicator.value.meta);
+      }
+      return true;
+    });
+  });
+  return valid;
+};
+
+export const isFilterDimensionNodeValue = <T>(
+  node: DimensionNodeValue<T>
+): node is FilterDimensionNodeValue<T> => {
+  return node.type === "dimension";
+};
+export const isIndicatorDimensionNodeValue = (
+  node: DimensionNodeValue
+): node is IndicatorDimensionNodeValue => {
+  return node.type === "indicator";
+};
+/**
+ * 检查维度对于指标是否有意义
+ * @param dimension
+ * @param indicator
+ */
+export const isDimensionValidateForIndicator = (
+  dimension: DimensionMeta,
+  indicator: IndicatorMeta
+): boolean => {
+  console.log(dimension, indicator);
+  // throw new Error("not implemented");
+  return true;
+};
+export const createDimensionNodeValue = <T>(
+  value: DimensionValue<T>
+): DimensionNodeValue<T> => {
+  return { type: "dimension", value };
+};
+export const createIndicatorNodeValue = <T>(value: {
+  meta: IndicatorMeta;
+  ignoreDimensions?: DimensionMeta[];
+}): DimensionNodeValue<T> => {
+  return { type: "indicator", value };
+};
+//#endregion
+
+//#region 基础的 cell
+export type BaseCell = {
+  key?: string;
+};
+export type CrossArea = BaseCell & {
+  type: "cross_area";
+  columnMeta: DimensionNodeValue[];
+  rowMeta: DimensionNodeValue[];
+};
+export type IndicatorCell<U> = BaseCell & {
+  type: "indicator";
+  indicator: { type: "value"; value: IndicatorValue<U> } | { type: "toFill" };
+};
+export type DimensionCell<T> = BaseCell & {
+  type: "dimension";
+  dimension: DimensionNodeValue<T>;
+};
+export type Cell<U, T> = IndicatorCell<U> | DimensionCell<T> | CrossArea;
+export const isDimensionCell = <U, T>(
+  cell: Cell<U, T>
+): cell is DimensionCell<T> => {
+  return cell.type === "dimension";
+};
+
+export const isDimensionCellEnumEqual = <T>(
+  cell1: DimensionCell<T>,
+  cell2: DimensionCell<T>
+) => {
+  const nodeValue1 = cell1.dimension;
+  const nodeValue2 = cell2.dimension;
+  const isSameDimensionMeta = isSameDimensionNodeValue(nodeValue1, nodeValue2);
+
+  if (!isSameDimensionMeta) return false;
+
+  const nodeValueEnum1 = getDimensionValueFromNodeValue(nodeValue1);
+  const nodeValueEnum2 = getDimensionValueFromNodeValue(nodeValue2);
+
+  if (nodeValueEnum1 === null || nodeValueEnum2 === null) return false;
+  return nodeValueEnum1 === nodeValueEnum2;
+};
+export const isIndicatorCell = <U, T>(
+  cell: Cell<U, T>
+): cell is IndicatorCell<U> => {
+  return cell.type === "indicator";
+};
+export const isCellValueEqual = <U, T>(
+  cell1: Cell<U, T>,
+  cell2: Cell<U, T>
+) => {
+  if (cell1.type !== cell2.type) return false;
+  if (cell1.type === "cross_area" && cell2.type === "cross_area") {
+    return true;
+  } else if (cell1.type === "dimension" && cell2.type === "dimension") {
+    return cell1.dimension.type;
+  } else if (cell1.type === "indicator" && cell2.type === "indicator") {
+    return true;
+  }
+  return false;
+};
+//#endregion
+//#region 支持向前对齐逻辑的 cell
+export type AlignedCell<U, T> = BaseCell & {
+  type: "aligned_dimension";
+  dimension: DimensionNodeValue<T>;
+  parent: CellWithAlign<U, T> | null;
+};
+export type CellWithAlign<U, T> = Cell<U, T> | AlignedCell<U, T>;
+export const getAllParent = <U, T>(
+  cell: AlignedCell<U, T>
+): DimensionValue<T>[] => {
+  const result: DimensionValue<T>[] = [];
+
+  let curNode: AlignedCell<U, T> = cell;
+
+  while (curNode) {
+    const value = getDimensionValueFromNodeValue(cell.dimension);
+    if (!value) break;
+
+    result.push(value);
+
+    if (curNode.parent?.type !== "aligned_dimension") {
+      break;
+    } else {
+      curNode = curNode.parent;
+    }
+  }
+
+  return result;
+};
+export const updateParent = <U, T>(
+  cell: AlignedCell<U, T>,
+  newParent: CellWithAlign<U, T> | null
+) => {
+  cell.parent = newParent;
+};
+export const isAlinedCell = <U, T>(
+  cell: CellWithAlign<U, T>
+): cell is AlignedCell<U, T> => {
+  return cell.type === "aligned_dimension";
+};
+export const toAlignedCell = <U, T>(
+  cell: DimensionCell<T> | AlignedCell<U, T>,
+  parent: CellWithAlign<U, T> | null
+): AlignedCell<U, T> => {
+  if (cell.type === "aligned_dimension") return cell;
+  return {
+    type: "aligned_dimension",
+    dimension: cell.dimension,
+    parent: parent,
+  };
+};
+
+// 获取是第几层的 align 节点。用于最终 ui 上做不同的展示，例如不同层级需要不同的锁进
+export const getAlignedDepth = <U, T>(cell: AlignedCell<U, T>): number => {
+  let depth = 0;
+  let curCell: AlignedCell<U, T> = cell;
+  while (curCell.parent) {
+    depth++;
+    if (isAlinedCell(curCell.parent)) {
+      curCell = curCell.parent;
+    } else {
+      break;
+    }
+  }
+  return depth;
+};
+//#endregion
+
+//#region 用于展示的表格数据
+
+//#region 基础的表格展示
+export type DataForDisplay<U, T, C = Cell<U, T>> = {
+  cells: TwoDimensionTable<C>;
+};
+// 获取列
+export const getColumnFromTable = <T>(
+  table: TwoDimensionTable<T>,
+  columnIndex: number
+): T[] => {
+  return table.map((row) => row[columnIndex]);
+};
+// 根据 comunIndex 对应的列，进行合并。 合并的原则是：如果当前行和上一行相同，则合并，否则不合并
+export const narrowSameRowForTable = <T>(
+  table: TwoDimensionTable<T>,
+  columnIndex: number,
+  equal: (item1: T, item2: T) => boolean
+): TwoDimensionTable<T> => {
+  const newTable: TwoDimensionTable<T> = [];
+
+  let prevColumnItem: T = table[0]?.[columnIndex];
+
+  if (!prevColumnItem) return table;
+
+  newTable.push(table[0]);
+
+  for (let i = 1; i < table.length; i++) {
+    const columnItem = table[i][columnIndex];
+
+    // 新的一行中对应位置，与上一行相同，则 skip
+    if (equal(prevColumnItem, columnItem)) {
+      continue;
+    } else {
+      newTable.push(table[i]);
+
+      prevColumnItem = columnItem;
+    }
+  }
+  return newTable;
+};
+
+// 行列转置
+export const transposeTwoDimensionTable = <T>(
+  table: TwoDimensionTable<T>
+): TwoDimensionTable<T> => {
+  const newRowCount = table[0]?.length;
+  const newColumnCount = table.length;
+  const newTable = createEmptyTwoDimensionTableWithCell(
+    newRowCount,
+    newColumnCount,
+    (rowIndex, columnIndex) => table[columnIndex][rowIndex]
+  );
+  return newTable;
+};
+//#endregion
+//#region 树转基础的表格
+// 仅填充了维度
+export const treeToDisplayCells = <U, T>(
+  treeList: Tree<DimensionNodeValue<T>>[]
+): DataForDisplay<U, T> => {
+  const leafCount = getLeafCountOfTreeList(treeList);
+  const depth = getDepthOfTreeList(treeList);
+  const emptyTable = createEmptyTwoDimensionTable(leafCount, depth);
+  return {
+    cells: mapTwoDimensionTable(
+      emptyTable,
+      (_, rowIndex, columnIndex): Cell<U, T> => {
+        const node = findNodeByRowAndDepth(treeList, rowIndex, columnIndex);
+        // 未找到 node, 说明是指标
+        if (!node) {
+          const value: IndicatorCell<U> = {
+            type: "indicator",
+            indicator: { type: "toFill" },
+          };
+          return value;
+        }
+
+        if (!node.value) {
+          throw new Error(`dimension node exception: no value; ${node}`);
+        }
+        const value: DimensionCell<T> = {
+          type: "dimension",
+          dimension: node.value,
+        };
+        return value;
+      }
+    ),
+  };
+};
+//#endregion
+
+//#region 合并单元格逻辑
 // 生成代表 cell 的唯一 key。 由于来源是树，因此对 [Node, ParentNode] 进行唯一化 key 即可。 即对两个 node 取标准 key, 拼接后即为节点对应的唯一 key
-export const generateSingleCellKey = (cell: Cell): string => {
+export const generateSingleCellKey = <U, T>(cell: Cell<U, T>): string => {
   if (cell.type !== "dimension") {
     return "";
   }
@@ -790,16 +757,18 @@ export const generateSingleCellKey = (cell: Cell): string => {
       return `indicator_${dimensionNodeValue.value.meta.code}`;
   }
 };
-export const generateKeyForCell = (option: {
-  cell: Cell;
-  parentCell: Cell | null;
+export const generateKeyForCell = <U, T>(option: {
+  cell: Cell<U, T>;
+  parentCell: Cell<U, T> | null;
 }): string => {
   const { cell, parentCell } = option;
   const cellKey = generateSingleCellKey(cell);
   const parentKey = parentCell ? generateSingleCellKey(parentCell) : "null";
   return `${cellKey}|${parentKey}`;
 };
-export const attachMergeKey = (data: DataForDisplay): DataForDisplay => {
+export const attachMergeKey = <U, T>(
+  data: DataForDisplay<U, T>
+): DataForDisplay<U, T> => {
   return {
     cells: mapTwoDimensionTable(data.cells, (cell, rowIndex, colIndex) => {
       const parentCell = data.cells[rowIndex]?.[colIndex - 1];
@@ -814,46 +783,100 @@ export const attachMergeKey = (data: DataForDisplay): DataForDisplay => {
     }),
   };
 };
+//#endregion
 
-// 仅填充了维度
-export const treeToDisplayCells = (
-  treeList: Tree<DimensionNodeValue>[]
-): DataForDisplay => {
-  const leafCount = getLeafCountOfTreeList(treeList);
-  const depth = getDepthOfTreeList(treeList);
-  const emptyTable = createEmptyTwoDimensionTable(leafCount, depth);
-  return {
-    cells: mapTwoDimensionTable(
-      emptyTable,
-      (_, rowIndex, columnIndex): Cell => {
-        const node = findNodeByRowAndDepth(treeList, rowIndex, columnIndex);
-        // 未找到 node, 说明是指标
-        if (!node) {
-          const value: IndicatorCell = {
+//#region 支持对齐的表格展示
+//left 和 top 都是仅包含自己表头部分的子表格。需要将二者合并，默认的规则是：left 的每一行，都和 top 的每一列进行交叉，形成一个新表格。
+export const getFullTableCells = <U, T>(
+  left: DataForDisplay<U, T, CellWithAlign<U, T>>,
+  _top: DataForDisplay<U, T, CellWithAlign<U, T>>
+): DataForDisplay<U, T, CellWithAlign<U, T>> => {
+  const top = { cells: transposeTwoDimensionTable(_top.cells) };
+
+  const leftRowCount = left.cells.length;
+  const leftColumnCount = left.cells[0]?.length;
+
+  const topRowCount = top.cells.length;
+  const topColumnCount = top.cells[0]?.length;
+
+  const totalRowCount = leftRowCount + topRowCount;
+  const totalColumnCount = leftColumnCount + topColumnCount;
+
+  const fixedLeftRowStartIndex = topRowCount;
+  const fixedLeftRowEndIndex = topRowCount + leftRowCount;
+  const fixedLeftColumnStartIndex = 0;
+  const fixedLeftColumnEndIndex = leftColumnCount;
+
+  const fixedTopRowStartIndex = 0;
+  const fixedTopRowEndIndex = topRowCount;
+  const fixedTopColumnStartIndex = leftColumnCount;
+  const fixedTopColumnEndIndex = leftColumnCount + topColumnCount;
+
+  const isLeftColumns = (index: number) =>
+    index >= fixedLeftColumnStartIndex && index < fixedLeftColumnEndIndex;
+  const isLeftRows = (index: number) =>
+    index >= fixedLeftRowStartIndex && index < fixedLeftRowEndIndex;
+  const isTopColumns = (index: number) =>
+    index >= fixedTopColumnStartIndex && index < fixedTopColumnEndIndex;
+  const isTopRows = (index: number) =>
+    index >= fixedTopRowStartIndex && index < fixedTopRowEndIndex;
+
+  const isCrossArea = (rowIndex: number, colIndex: number) =>
+    rowIndex < topRowCount && colIndex < leftColumnCount;
+
+  const totalRowToLeftRowIndex = (rowIndex: number) => rowIndex - topRowCount;
+  const totalColumnToTopColumnIndex = (colIndex: number) =>
+    colIndex - leftColumnCount;
+
+  const mergedCells: TwoDimensionTable<CellWithAlign<U, T>> =
+    createEmptyTwoDimensionTableWithCell(
+      totalRowCount,
+      totalColumnCount,
+      (rowIndex, colIndex) => {
+        if (isCrossArea(rowIndex, colIndex)) {
+          return {
+            type: "cross_area",
+            columnMeta: removeRepeat<T>(
+              getNodeInColToBottom(left.cells, rowIndex, colIndex)
+                .filter((node) => {
+                  return (
+                    node.type === "dimension" ||
+                    node.type === "aligned_dimension"
+                  );
+                })
+                .map((node) => node.dimension)
+            ),
+            rowMeta: removeRepeat<T>(
+              getNodesInRowToRight(top.cells, rowIndex, colIndex)
+                .filter(
+                  (node) =>
+                    node.type === "dimension" ||
+                    node.type === "aligned_dimension"
+                )
+                .map((node) => node.dimension)
+            ),
+          } as CellWithAlign<U, T>;
+        } else if (isLeftRows(rowIndex) && isLeftColumns(colIndex)) {
+          return left.cells[totalRowToLeftRowIndex(rowIndex)][colIndex];
+        } else if (isTopRows(rowIndex) && isTopColumns(colIndex)) {
+          return top.cells[rowIndex][totalColumnToTopColumnIndex(colIndex)];
+        } else {
+          return {
             type: "indicator",
             indicator: { type: "toFill" },
-          };
-          return value;
+          } as CellWithAlign<U, T>;
         }
-
-        if (!node.value) {
-          throw new Error(`dimension node exception: no value; ${node}`);
-        }
-        const value: DimensionCell = {
-          type: "dimension",
-          dimension: node.value,
-        };
-        return value;
       }
-    ),
-  };
+    );
+  return { cells: mergedCells };
 };
-//#region tableToAlignedTable
-export const tableToAlignedTable = (
-  _table: DataForDisplay,
-  uiConfig: UIConfigDimension[]
-): DataForDisplay<CellWithAlign> => {
-  const table = _table as DataForDisplay<CellWithAlign>;
+//#endregion
+//#region 基础单元格，转支持向前对齐逻辑的单元格
+export const tableToAlignedTable = <U, T>(
+  _table: DataForDisplay<U, T, Cell<U, T>>,
+  uiConfig: UIConfigItem[]
+): DataForDisplay<U, T, CellWithAlign<U, T>> => {
+  const table = _table as DataForDisplay<U, T, CellWithAlign<U, T>>;
   const alignedColumns = uiConfig
     .filter((configItem) => configItem.type === "dimension")
     .filter((config) => config.alignToParent)
@@ -876,8 +899,8 @@ export const tableToAlignedTable = (
     if (!dimensionMeta) continue;
 
     const toDimensionCell = (
-      cell: DimensionCell | AlignedCell
-    ): DimensionCell => {
+      cell: DimensionCell<T> | AlignedCell<U, T>
+    ): DimensionCell<T> => {
       if (cell.type === "dimension") return cell;
 
       return {
@@ -886,8 +909,8 @@ export const tableToAlignedTable = (
       };
     };
     const isCellAllDimensionAndEnumEqual = (
-      cell1: CellWithAlign,
-      cell2: CellWithAlign
+      cell1: CellWithAlign<U, T>,
+      cell2: CellWithAlign<U, T>
     ) => {
       if (cell1.type !== "dimension" && cell1.type !== "aligned_dimension")
         return false;
@@ -935,7 +958,7 @@ export const tableToAlignedTable = (
           }
         );
 
-        const toRow = (cell: AlignedCell): CellWithAlign[] => {
+        const toRow = (cell: AlignedCell<U, T>): CellWithAlign<U, T>[] => {
           const prevCells = table.cells[j].slice(0, i - 1);
           return [...prevCells, cell];
         };
@@ -947,7 +970,7 @@ export const tableToAlignedTable = (
           )
           // todo：转换为 alignedCell 后，需要更新子节点中的标记
           .map((cell) => {
-            const newCell = toAlignedCell(cell, newColumnItem);
+            const newCell = toAlignedCell<U, T>(cell, newColumnItem);
 
             itemsShouldAlignToNewColumnItem
               .filter((item) => item.type === "aligned_dimension")
@@ -966,223 +989,49 @@ export const tableToAlignedTable = (
   return table;
 };
 //#endregion
-
-//#region test data
-const gmv: IndicatorMeta = { code: "gmv", name: "gmv" };
-const profit: IndicatorMeta = { code: "profit", name: "profit" };
-
-const region: DimensionMeta = { code: "region", name: "region" };
-const bizLine: DimensionMeta = { code: "biz_line", name: "biz_line" };
-const subBizLine: DimensionMeta = {
-  code: "sub_biz_line",
-  name: "sub_biz_line",
-};
-const dateDimension: DimensionMeta = { code: "date", name: "date" };
-
-const withoutIndicatorConfig: UIHeaderNoIndicatorConfig = {
-  dimensions: [
-    { type: "dimension", meta: region },
-    { type: "dimension", meta: bizLine, alignToParent: false },
-    { type: "dimension", meta: subBizLine, alignToParent: true },
-  ],
-};
-const withIndicatorConfig: UIHeaderWithIndicatorConfig = {
-  dimensions: [{ type: "dimension", meta: dateDimension }],
-  indicator: {
-    meta: [{ meta: gmv }, { meta: profit, ignoreDimensions: [dateDimension] }],
-    index: 0,
-  },
-};
-
-// 根据 leftHeaderConfig 和 topHeaderConfig 构建 DimensionTableData。要求每一个维度度覆盖到一条具体的 record
-
-export const tableData: DimensionTableData = {
-  records: [
-    {
-      dimensions: [
-        { meta: region, value: "region1", order: 1 },
-        { meta: bizLine, value: "biz_line1", order: 1 },
-        { meta: subBizLine, value: "sub_biz_line1", order: 1 },
-        { meta: dateDimension, value: "2025-09", order: 1 },
-      ],
-      indicators: [
-        { meta: gmv, value: 100 },
-        { meta: profit, value: 0.1 },
-      ],
-    },
-    {
-      dimensions: [
-        { meta: region, value: "region1", order: 1 },
-        { meta: bizLine, value: "biz_line1", order: 1 },
-        { meta: subBizLine, value: "sub_biz_line1", order: 1 },
-        { meta: dateDimension, value: "2025-10", order: 1 },
-      ],
-      indicators: [
-        { meta: gmv, value: 200 },
-        { meta: profit, value: 0.2 },
-      ],
-    },
-    {
-      dimensions: [
-        { meta: region, value: "region1", order: 1 },
-        { meta: bizLine, value: "biz_line1", order: 1 },
-        { meta: subBizLine, value: "sub_biz_line1", order: 1 },
-        { meta: dateDimension, value: "2025-11", order: 3 },
-      ],
-      indicators: [
-        { meta: gmv, value: 1100 },
-        { meta: profit, value: 0.11 },
-      ],
-    },
-    {
-      dimensions: [
-        { meta: region, value: "region1", order: 1 },
-        { meta: bizLine, value: "biz_line1", order: 1 },
-        { meta: subBizLine, value: "sub_biz_line2", order: 2 },
-        { meta: dateDimension, value: "2025-09", order: 1 },
-      ],
-      indicators: [
-        { meta: gmv, value: 300 },
-        { meta: profit, value: 0.3 },
-      ],
-    },
-    {
-      dimensions: [
-        { meta: region, value: "region1", order: 1 },
-        { meta: bizLine, value: "biz_line1", order: 1 },
-        { meta: subBizLine, value: "sub_biz_line2", order: 2 },
-        { meta: dateDimension, value: "2025-10", order: 2 },
-      ],
-      indicators: [
-        { meta: gmv, value: 400 },
-        { meta: profit, value: 0.4 },
-      ],
-    },
-    {
-      dimensions: [
-        { meta: region, value: "region1", order: 1 },
-        { meta: bizLine, value: "biz_line1", order: 1 },
-        { meta: subBizLine, value: "sub_biz_line3", order: 3 },
-        { meta: dateDimension, value: "2025-09", order: 1 },
-      ],
-      indicators: [
-        { meta: gmv, value: 400 },
-        { meta: profit, value: 0.99 },
-      ],
-    },
-    {
-      dimensions: [
-        { meta: region, value: "region1", order: 1 },
-        { meta: bizLine, value: "biz_line1", order: 1 },
-        { meta: subBizLine, value: "sub_biz_line3", order: 3 },
-        { meta: dateDimension, value: "2025-10", order: 1 },
-      ],
-      indicators: [
-        { meta: gmv, value: 1000 },
-        { meta: profit, value: 0.4 },
-      ],
-    },
-    {
-      dimensions: [
-        { meta: region, value: "region1", order: 1 },
-        { meta: bizLine, value: "biz_line2", order: 1 },
-        { meta: subBizLine, value: "sub_biz_line4", order: 3 },
-        { meta: dateDimension, value: "2025-09", order: 1 },
-      ],
-      indicators: [
-        { meta: gmv, value: 500 },
-        { meta: profit, value: 0.5 },
-      ],
-    },
-    {
-      dimensions: [
-        { meta: region, value: "region2", order: 1 },
-        { meta: bizLine, value: "biz_line3", order: 1 },
-        { meta: subBizLine, value: "sub_biz_line5", order: 5 },
-        { meta: dateDimension, value: "2025-09", order: 1 },
-      ],
-      indicators: [
-        { meta: gmv, value: 500 },
-        { meta: profit, value: 0.5 },
-      ],
-    },
-    {
-      dimensions: [
-        { meta: region, value: "region2", order: 1 },
-        { meta: bizLine, value: "biz_line3", order: 1 },
-        { meta: subBizLine, value: "sub_biz_line5", order: 5 },
-        { meta: dateDimension, value: "2025-11", order: 3 },
-      ],
-      indicators: [
-        { meta: gmv, value: 499 },
-        { meta: profit, value: 0.3 },
-      ],
-    },
-  ],
-};
-
-export const uiConfig: DimensionTableUIConfig = {
-  type: "indicator_in_head",
-  head: withIndicatorConfig,
-  left: withoutIndicatorConfig,
-};
-export const uiConfig2: DimensionTableUIConfig = {
-  type: "indicator_in_left",
-  head: withoutIndicatorConfig,
-  left: withIndicatorConfig,
-};
-export const uiConfig3: DimensionTableUIConfig = {
-  type: "indicator_in_left",
-  head: {
-    dimensions: [
-      { type: "dimension", meta: subBizLine },
-      { type: "dimension", meta: dateDimension },
-    ],
-  },
-  left: {
-    dimensions: [
-      { type: "dimension", meta: region },
-      { type: "dimension", meta: bizLine },
-    ],
-    indicator: {
-      meta: [{ meta: gmv }, { meta: profit }],
-      index: 1,
-    },
-  },
-};
 //#endregion
 
-//#region build full cells
-export const buildTreeForFullCells = (
+//#endregion
+
+//#region 配置 + 数据 -> 用于展示的表格数据
+// region 根据 ui config 和 table data 生成左子树和顶部子树
+export const buildTreeForFullCells = <U, T>(
   _uiConfig: DimensionTableUIConfig,
-  data: DimensionTableData
+  data: DimensionTableData<U, T>
 ): {
-  leftTreeData: DataForDisplay<CellWithAlign>;
-  topTreeData: DataForDisplay<CellWithAlign>;
+  leftTreeData: DataForDisplay<U, T, CellWithAlign<U, T>>;
+  topTreeData: DataForDisplay<U, T, CellWithAlign<U, T>>;
 } => {
   if (_uiConfig.type === "indicator_in_head") {
-    const leftTree = buildTree(_uiConfig.left.dimensions, data);
-    const leftTreeData = attachMergeKey(treeToDisplayCells(leftTree));
-
-    tableToAlignedTable(leftTreeData, uiConfig.left.dimensions);
-
-    const topTree = buildTree(
-      getDrillPathFromUIHeaderWithIndicatorConfig(_uiConfig.head),
-      data
+    const leftTreeData = attachMergeKey(
+      treeToDisplayCells<U, T>(buildTree(_uiConfig.left.dimensions, data))
     );
-    const topTreeData = attachMergeKey(treeToDisplayCells(topTree));
-    tableToAlignedTable(topTreeData, uiConfig.head.dimensions);
-    return { leftTreeData, topTreeData };
-  } else if (_uiConfig.type === "indicator_in_left") {
-    const leftTree = buildTree(
-      getDrillPathFromUIHeaderWithIndicatorConfig(_uiConfig.left),
-      data
-    );
-    const leftTreeData = attachMergeKey(treeToDisplayCells(leftTree));
     tableToAlignedTable(leftTreeData, _uiConfig.left.dimensions);
 
-    const topTree = buildTree(_uiConfig.head.dimensions, data);
-    const topTreeData = attachMergeKey(treeToDisplayCells(topTree));
+    const topTreeData = attachMergeKey(
+      treeToDisplayCells<U, T>(
+        buildTree(
+          getDrillPathFromUIHeaderWithIndicatorConfig(_uiConfig.head),
+          data
+        )
+      )
+    );
+    tableToAlignedTable(topTreeData, _uiConfig.head.dimensions);
+    return { leftTreeData, topTreeData };
+  } else if (_uiConfig.type === "indicator_in_left") {
+    const leftTreeData = attachMergeKey(
+      treeToDisplayCells<U, T>(
+        buildTree(
+          getDrillPathFromUIHeaderWithIndicatorConfig(_uiConfig.left),
+          data
+        )
+      )
+    );
+    tableToAlignedTable(leftTreeData, _uiConfig.left.dimensions);
+
+    const topTreeData = attachMergeKey(
+      treeToDisplayCells<U, T>(buildTree(_uiConfig.head.dimensions, data))
+    );
     tableToAlignedTable(topTreeData, _uiConfig.head.dimensions);
 
     return { leftTreeData, topTreeData };
@@ -1190,18 +1039,24 @@ export const buildTreeForFullCells = (
     throw new Error("invalid ui config");
   }
 };
-export const buildFullCells = (
+//#endregion
+
+//#region 根据左子树和顶部子树，整个表格
+export const buildFullCellsFromTwoTree = <U, T>(
   uiConfig: DimensionTableUIConfig,
-  data: DimensionTableData
-) => {
+  data: DimensionTableData<U, T>
+): DataForDisplay<U, T, CellWithAlign<U, T>> => {
   const { leftTreeData, topTreeData } = buildTreeForFullCells(uiConfig, data);
   return getFullTableCells(leftTreeData, topTreeData);
 };
-export const getDataValueByIndicator = (
-  data: DimensionTableData,
+//#endregion
+
+//#region 填充指标值区域的单元格
+export const getDataValueByIndicator = <U, T>(
+  data: DimensionTableData<U, T>,
   indicator: IndicatorMeta,
-  filter: DimensionValue[]
-): IndicatorValue | null => {
+  filter: DimensionValue<T>[]
+): IndicatorValue<U> | null => {
   const records = data.records.filter((record) => {
     return filter.every((f) =>
       record.dimensions.some(
@@ -1217,11 +1072,12 @@ export const getDataValueByIndicator = (
     firstRecord.indicators.find((i) => i.meta.code === indicator.code) ?? null
   );
 };
-export const fillData = (
-  tableToFill: DataForDisplay<CellWithAlign>,
-  data: DimensionTableData
-): DataForDisplay<CellWithAlign> => {
-  const newTable: TwoDimensionTable<CellWithAlign> = mapTwoDimensionTable(
+
+export const fillIndicatorCells = <U, T>(
+  tableToFill: DataForDisplay<U, T, CellWithAlign<U, T>>,
+  data: DimensionTableData<U, T>
+): DataForDisplay<U, T, CellWithAlign<U, T>> => {
+  const newTable: TwoDimensionTable<CellWithAlign<U, T>> = mapTwoDimensionTable(
     tableToFill.cells,
     (cell, rowIndex, columnIndex) => {
       if (cell.type !== "indicator") return cell;
@@ -1268,4 +1124,17 @@ export const fillData = (
     cells: newTable,
   };
 };
+//#endregion
+
+//#region 最终对外暴露的接口
+export const buildTable = <U, T>(
+  data: DimensionTableData<U, T>,
+  uiConfig: DimensionTableUIConfig
+): DataForDisplay<U, T, CellWithAlign<U, T>> => {
+  const { leftTreeData, topTreeData } = buildTreeForFullCells(uiConfig, data);
+  const cells = getFullTableCells(leftTreeData, topTreeData);
+  const filledCells = fillIndicatorCells(cells, data);
+  return filledCells;
+};
+//#endregion
 //#endregion

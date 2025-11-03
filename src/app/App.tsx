@@ -1,10 +1,5 @@
-import { DimensionTableComponent } from "../example/Component";
-import {
-  tableData,
-  uiConfig,
-  // uiConfig2 as uiConfig,
-  // uiConfig3 as uiConfig
-} from "../example/dimensionTable";
+import { DimensionTableComponent } from "../example/BizComponent";
+import { tableData, uiConfig } from "../example/data";
 
 function App() {
   return (
@@ -15,7 +10,7 @@ function App() {
         indicatorRender={(cell) => {
           switch (cell.indicator.type) {
             case "value":
-              return <span>{cell.indicator.value.value}</span>;
+              return <span>{cell.indicator.value.value.vvalue}</span>;
             case "toFill":
               return <span>-</span>;
             default:

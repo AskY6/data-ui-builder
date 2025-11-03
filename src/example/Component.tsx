@@ -1,7 +1,6 @@
 import React, { useMemo } from "react";
 import {
-  buildFullCells,
-  fillData,
+  buildTable,
   getAlignedDepth,
   type AlignedCell,
   type CrossArea,
@@ -12,25 +11,30 @@ import {
 } from "./dimensionTable";
 
 export type CellRenderContext = {
-  type: DimensionTableUIConfig['type']
-}
-export type CommonCrossTableProps = {
+  type: DimensionTableUIConfig["type"];
+};
+export type CommonCrossTableProps<U, T> = {
   uiConfig: DimensionTableUIConfig;
-  tableData: DimensionTableData;
+  tableData: DimensionTableData<U, T>;
   renders: {
-    alignedCellRender: (cell: AlignedCell, option: { depth: number }) => React.ReactNode
-    dimensionRender: (cell: DimensionCell) => React.ReactNode;
-    indicatorRender: (cell: IndicatorCell) => React.ReactNode;
-    crossAreaRender: (cell: CrossArea, context: CellRenderContext) => React.ReactNode;
+    alignedCellRender: (
+      cell: AlignedCell<U, T>,
+      option: { depth: number }
+    ) => React.ReactNode;
+    dimensionRender: (cell: DimensionCell<T>) => React.ReactNode;
+    indicatorRender: (cell: IndicatorCell<U>) => React.ReactNode;
+    crossAreaRender: (
+      cell: CrossArea,
+      context: CellRenderContext
+    ) => React.ReactNode;
   };
 };
-export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
+export function CommonCrossTable<U, T>(props: CommonCrossTableProps<U, T>) {
   const { uiConfig, tableData, renders } = props;
 
   const dataToRender = useMemo(() => {
-    const tableToRender = buildFullCells(uiConfig, tableData);
-    const data = fillData(tableToRender, tableData);
-    return data
+    const data = buildTable(tableData, uiConfig);
+    return data;
   }, [uiConfig, tableData]);
 
   const context: CellRenderContext = {
@@ -59,8 +63,8 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
                       {renders.dimensionRender(cell)}
                     </div>
                   );
-                case 'aligned_dimension':
-                  const depth = getAlignedDepth(cell)
+                case "aligned_dimension": {
+                  const depth = getAlignedDepth(cell);
                   return (
                     <div
                       style={{
@@ -75,6 +79,7 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
                       {renders.alignedCellRender(cell, { depth })}
                     </div>
                   );
+                }
                 case "indicator":
                   return (
                     <div
@@ -110,84 +115,4 @@ export const CommonCrossTable: React.FC<CommonCrossTableProps> = (props) => {
       })}
     </div>
   );
-};
-
-export type DimensionTableComponentProps = {
-  uiConfig: DimensionTableUIConfig;
-  tableData: DimensionTableData;
-  indicatorRender: (cell: IndicatorCell) => React.ReactNode;
-};
-const DimensionTableComponent: React.FC<DimensionTableComponentProps> = (props) => {
-  const { uiConfig, tableData } = props;
-
-  const baseDiemensionRender = (cell: DimensionCell) => {
-    switch (cell.dimension.type) {
-      case "dimension":
-        return <span>{cell.dimension.value.value}</span>;
-      case "indicator":
-        return <span>{cell.dimension.value.meta.name}</span>;
-      case "dimension_placeholder":
-        return <span>占位符：{cell.dimension.value.name}</span>;
-      default:
-        return ''
-    }
-  }
-
-  return (
-    <CommonCrossTable
-      uiConfig={uiConfig}
-      tableData={tableData}
-      renders={{
-        dimensionRender: baseDiemensionRender,
-        alignedCellRender: (cell, { depth }) => {
-          return <div style={{ paddingLeft: 10 * depth  }}>
-            {
-              baseDiemensionRender({
-                type: 'dimension',
-                dimension: cell.dimension
-              })
-            }
-          </div>
-        },
-        indicatorRender: (cell) => {
-          return props.indicatorRender(cell);
-        },
-        crossAreaRender: (cell, context) => {
-          if (context.type === "indicator_in_head") {
-            if (cell.columnMeta.length > 0) {
-              return <span>
-                {
-                  cell.columnMeta.map(meta => {
-                    if (meta.type === "dimension") {
-                      return <span>{meta.value.meta.name}|</span>;
-                    }
-                    return <span>-</span>;
-                  })
-                }
-              </span>
-            } else {
-              return <span>-</span>
-            }
-          } else if (context.type === "indicator_in_left") {
-            if (cell.rowMeta.length > 0) {
-              return <span>
-                {
-                  cell.rowMeta.map(meta => {
-                    if (meta.type === "dimension") {
-                      return <span>{meta.value.meta.name}</span>;
-                    }
-                    return <span>-</span>;
-                  })
-                }
-              </span>
-            }
-          } else {
-            return <span>-</span>;
-          }
-        },
-      }}
-    />
-  );
-};
-
-export { DimensionTableComponent };
+}
